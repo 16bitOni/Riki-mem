@@ -40,18 +40,35 @@ class Base(DeclarativeBase):
     pass
 
 
+NAMESPACE_KINDS = ("user", "agent", "team", "org")
+
+
 class User(Base):
-    """A memory namespace. The host app owns the real user; here a row just
-    carries the display name, timezone and the rolling profile summary."""
+    """A memory namespace. Every memory belongs to exactly one.
+
+    The host app owns the real user; here a row carries the display name,
+    timezone and rolling profile. ``id`` is globally unique (e.g. "acme/alice");
+    ``tenant_id`` says which organisation owns it, ``kind`` whose memory it is
+    (a person, an agent, or a team/org whose memory is shared). See
+    Docs/SCOPE_MODEL.md.
+    """
 
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), default="default", server_default="default", index=True)
+    kind: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
     name: Mapped[str] = mapped_column(String(200), default="")
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
     profile: Mapped[str] = mapped_column(Text, default="")
     profile_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind in (" + ",".join(f"'{k}'" for k in NAMESPACE_KINDS) + ")", name="user_kind_valid"
+        ),
+    )
 
 
 class Memory(Base):
@@ -195,7 +212,7 @@ class Instance(Base):
     ``subject``: the free-text noun a person counts by ("instrument",
     "wedding", "doctor"), singular and normalised per user, so the schema
     works for things nobody anticipated.
-    ``instance_key``: normalized identity (e.g. "fender-stratocaster"),
+    ``instance_key``: normalized identity (e.g. "bosch-dishwasher"),
     so the same real-world thing mentioned across sessions deduplicates.
     ``status``: separates occurrences from plans/desires/former — the filter
     that makes "how many did I attend" exclude "plans to attend".

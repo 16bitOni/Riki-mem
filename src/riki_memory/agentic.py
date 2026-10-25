@@ -42,8 +42,8 @@ Pay special attention to:
 
 If information is missing, write a focused follow-up search query to find it.
 Include specific keywords, entity names, and topic tags to search for.
-For aggregation questions, use follow_up_tags (e.g. "wedding", "model-kit") to
-find ALL instances of a category."""
+For aggregation questions, use follow_up_tags (the thing being counted, e.g.
+"interview", "renovation") to find ALL instances of a category."""
 
 
 class ReflectionResult(BaseModel):
@@ -71,7 +71,7 @@ class ReflectionResult(BaseModel):
     )
     follow_up_tags: list[str] = Field(
         default_factory=list,
-        description="Topic tags to search for (e.g. 'wedding', 'purchase'). "
+        description="Topic tags to search for (e.g. 'interview', 'purchase'). "
         "Use for aggregation queries to find all instances.",
     )
 

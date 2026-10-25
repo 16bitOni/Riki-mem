@@ -71,8 +71,9 @@ topics (not the pronouns) when filling in the fields below.
 - entities: people, places, organisations or projects mentioned or referenced.
 - relation_words: relationship words ("my sister's husband's company" -> sister, husband, company). Use the user's own words.
 - tags: topic tags to search for. CRITICAL for counting or aggregation questions
-  ("how many weddings?", "total bike expenses", "all my doctor visits"): put the plain
-  noun being counted FIRST, singular and lowercase ("wedding", "bike", "doctor"), then
+  ("how many interviews?", "total spent on the renovation", "all my dentist visits"): put
+  the plain noun being counted FIRST, singular and lowercase ("interview", "renovation",
+  "dentist"), then
   any other useful topic labels.
 - start / end: only if the message refers to a time ("last week", "in March", "yesterday"). Use ISO 8601 with the timezone offset.
 Leave fields empty rather than guessing."""

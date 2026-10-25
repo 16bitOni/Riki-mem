@@ -70,7 +70,7 @@ class RetrievalPlan(BaseModel):
     )
     tags: list[str] = Field(
         default_factory=list,
-        description="Topic tags to search for (e.g. ['wedding', 'doctor']). For counting or "
+        description="Topic tags to search for (e.g. ['interview', 'dentist']). For counting or "
         "aggregation questions ('how many X', 'total', 'all my') put the noun being counted first.",
     )
     start: datetime | None = Field(
@@ -204,17 +204,17 @@ class InstanceItem(BaseModel):
     )
     subject: str = Field(
         description="The everyday noun you would count this by, singular: the X in 'how many X'. "
-        "Prefer the broader class a person would ask about ('instrument' for a guitar, "
-        "'doctor' for a dermatologist); the specifics go in display_name."
+        "Prefer the broader class a person would ask about ('appliance' for a dishwasher, "
+        "'course' for a Python bootcamp); the specifics go in display_name."
     )
     instance_key: str = Field(
         description="Normalized identity string for dedup (lowercase-hyphenated). "
-        "Examples: 'fender-stratocaster', 'rachel-mike-wedding', 'dr-lee-orthopedics'. "
+        "Examples: 'bosch-dishwasher', 'priya-farewell-dinner', 'dr-mehta-dentist'. "
         "The same real-world thing must always get the same key."
     )
     display_name: str = Field(
-        description="Human-readable name. Examples: 'Fender Stratocaster', "
-        "'Rachel and Mike wedding', 'Dr. Lee (orthopedics)'."
+        description="Human-readable name. Examples: 'Bosch dishwasher', "
+        "'Priya's farewell dinner', 'Dr. Mehta (dentist)'."
     )
     status: InstanceStatus = Field(
         description="'occurred' for completed events/purchases, 'current' for things "
@@ -299,8 +299,8 @@ class NewMemory(BaseModel):
     tags: list[str] = Field(
         default_factory=list,
         description="2-5 short lowercase topic/category labels describing what this memory "
-        "is about. Examples: wedding, purchase, doctor-visit, hobby, travel, cooking, "
-        "fitness, work, family, pet, finance, home-improvement, streaming, gaming.",
+        "is about. Examples: purchase, job-interview, travel, fitness, work, family, "
+        "health, finance, home-improvement, school.",
     )
     replaces: list[str] = Field(
         default_factory=list, description="IDs of known memories this one makes outdated."

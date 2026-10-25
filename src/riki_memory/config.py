@@ -44,9 +44,10 @@ class MemoryConfig(BaseModel):
         description="Cosine similarity at which a stored instance subject becomes a candidate "
         "for a counting question's noun when no word matches ('instruments' -> 'guitar'). "
         "One fast LLM call then keeps only real members, so this is set low for recall. "
-        "0.40 is calibrated for amazon.titan-embed-text-v1 (96% of members kept; 0.98 "
-        "precision after the LLM step). Other models score on other scales: run "
-        "longeval/calibrate_subjects.py after changing embedding model.",
+        "Measured: amazon.titan-embed-text-v1 0.40 (96% of members kept, 0.98 precision after "
+        "the LLM step); cohere.embed-v4 0.56 (96%, 0.94). Too low only costs a few tokens, too "
+        "high loses members, so 0.40 is a safe default for both. Other models score on other "
+        "scales: run longeval/calibrate_subjects.py after changing embedding model.",
     )
     importance_weight: float = Field(
         0.05, ge=0, le=0.3, description="Small boost per importance point above 3."

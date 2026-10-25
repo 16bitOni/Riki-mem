@@ -1,0 +1,378 @@
+[
+  {
+    "id": "recall-basic",
+    "category": "recall",
+    "about": "A plain fact from a past conversation comes back.",
+    "sessions": [
+      {"days_ago": 40, "turns": [
+        ["We finally adopted a dog! A beagle, we named him Biscuit.", "Congratulations! Beagles are full of energy. How is Biscuit settling in?"],
+        ["He's chewing everything, but we love him.", "That's normal for a new dog. Chew toys help a lot."]
+      ]}
+    ],
+    "questions": [
+      {"q": "What's my dog's name?", "expected": "Biscuit"},
+      {"q": "What breed is my dog?", "expected": "a beagle"}
+    ]
+  },
+  {
+    "id": "preference-diet",
+    "category": "preference",
+    "about": "Dietary preferences and an allergy shape later suggestions.",
+    "sessions": [
+      {"days_ago": 60, "turns": [
+        ["I've been vegetarian for about five years now.", "Good to know. Do you eat eggs and dairy?"],
+        ["Dairy yes, eggs no. And I'm seriously allergic to peanuts, so be careful with recipes.", "Got it: vegetarian, no eggs, and a peanut allergy. I'll keep that in mind."]
+      ]}
+    ],
+    "questions": [
+      {"q": "Do I have any food allergies?", "expected": "Yes, peanuts"},
+      {"q": "Can you suggest an omelette recipe for my breakfast?", "expected": "Should not suggest an omelette as is, because the user does not eat eggs"}
+    ]
+  },
+  {
+    "id": "update-city",
+    "category": "update",
+    "about": "A newer fact replaces an older one.",
+    "sessions": [
+      {"days_ago": 200, "turns": [
+        ["I live in Pune, near Koregaon Park.", "Nice area. Lots of good cafes there."]
+      ]},
+      {"days_ago": 30, "turns": [
+        ["Big news, I moved to Bangalore last week for the new job. Living in Indiranagar now.", "Congratulations on the move! Indiranagar is lively."]
+      ]}
+    ],
+    "questions": [
+      {"q": "Which city do I live in?", "expected": "Bangalore (Indiranagar)"},
+      {"q": "Do I still live in Pune?", "expected": "No, the user moved from Pune to Bangalore"}
+    ]
+  },
+  {
+    "id": "update-job",
+    "category": "update",
+    "about": "A job change: current employer and former employer both stay correct.",
+    "sessions": [
+      {"days_ago": 300, "turns": [
+        ["I'm a backend engineer at Infosys, mostly Java services.", "Thanks. Is it client work or product work?"],
+        ["Client work, banking projects.", "Understood."]
+      ]},
+      {"days_ago": 45, "turns": [
+        ["I accepted the offer from Razorpay! Starting as a senior engineer on the payments team.", "Congratulations! That's a great step."],
+        ["Yeah, I served my notice at Infosys last month.", "Good luck with the transition."]
+      ]}
+    ],
+    "questions": [
+      {"q": "Where do I work now?", "expected": "Razorpay, as a senior engineer on the payments team"},
+      {"q": "Where did I work before my current job?", "expected": "Infosys"}
+    ]
+  },
+  {
+    "id": "count-current-plants",
+    "category": "counting",
+    "about": "Counting what the user currently has, after one item is gone.",
+    "sessions": [
+      {"days_ago": 90, "turns": [
+        ["I bought three plants for the balcony: a money plant, a snake plant and a tulsi.", "Lovely choice. Snake plants are very hardy."]
+      ]},
+      {"days_ago": 50, "turns": [
+        ["Sad news, the tulsi died. I think I overwatered it.", "Sorry about that. Tulsi likes well-drained soil."]
+      ]},
+      {"days_ago": 20, "turns": [
+        ["I got a new plant, an areca palm, for the living room.", "Areca palms like bright indirect light."]
+      ]}
+    ],
+    "questions": [
+      {"q": "How many plants do I have right now?", "expected": "3 (money plant, snake plant, areca palm)"}
+    ]
+  },
+  {
+    "id": "count-interviews",
+    "category": "counting",
+    "about": "Counting distinct events mentioned across sessions, including a repeat mention.",
+    "sessions": [
+      {"days_ago": 70, "turns": [
+        ["Had my first interview today, with Swiggy, for a backend role.", "How did it go?"],
+        ["Pretty well I think.", "Fingers crossed."]
+      ]},
+      {"days_ago": 62, "turns": [
+        ["Two more interviews this week: Zerodha on Monday and Freshworks on Thursday.", "That's a busy week. Good luck with both."]
+      ]},
+      {"days_ago": 55, "turns": [
+        ["Swiggy called back about that interview, they want a second round.", "Great sign!"],
+        ["Also I'm withdrawing from the Cred process before it even starts.", "Understood."]
+      ]}
+    ],
+    "questions": [
+      {"q": "How many companies have I interviewed with?", "expected": "3 (Swiggy, Zerodha, Freshworks); Cred does not count because the user withdrew before interviewing"}
+    ]
+  },
+  {
+    "id": "sum-renovation",
+    "category": "sum",
+    "about": "Adding up amounts mentioned at different times, without double-counting a repeat.",
+    "sessions": [
+      {"days_ago": 80, "turns": [
+        ["Started the living room makeover. Bought a sofa for $1,200.", "Nice! What style?"],
+        ["Mid-century, grey fabric.", "Classic choice."]
+      ]},
+      {"days_ago": 60, "turns": [
+        ["Paint and supplies came to $450.", "That's reasonable for a full room."]
+      ]},
+      {"days_ago": 40, "turns": [
+        ["The $1,200 sofa was totally worth it by the way. Also got curtains for $180.", "Glad you like it!"]
+      ]}
+    ],
+    "questions": [
+      {"q": "How much have I spent on the living room makeover so far?", "expected": "$1,830 (sofa $1,200 + paint $450 + curtains $180)"}
+    ]
+  },
+  {
+    "id": "plan-vs-done",
+    "category": "plans",
+    "about": "Plans and wishes are kept apart from things that actually happened.",
+    "sessions": [
+      {"days_ago": 120, "turns": [
+        ["I'm planning a trip to Japan next spring, maybe Kyoto and Osaka.", "Spring is cherry blossom season, book early."],
+        ["Also want to do Ladakh someday.", "Ladakh is stunning."]
+      ]},
+      {"days_ago": 30, "turns": [
+        ["Just got back from Goa, four days of beaches and seafood.", "Sounds wonderful! How was the weather?"]
+      ]}
+    ],
+    "questions": [
+      {"q": "Have I been to Japan?", "expected": "No, the user is only planning a trip to Japan"},
+      {"q": "Which places have I actually traveled to recently?", "expected": "Goa"}
+    ]
+  },
+  {
+    "id": "temporal-when",
+    "category": "temporal",
+    "about": "When something happened, as a real date.",
+    "sessions": [
+      {"days_ago": 45, "turns": [
+        ["Today was my first day at Razorpay!", "Congratulations on your first day!"]
+      ]}
+    ],
+    "questions": [
+      {"q": "When did I start at Razorpay?", "expected": "{d:45}"}
+    ]
+  },
+  {
+    "id": "temporal-order",
+    "category": "temporal",
+    "about": "Which of two events came first.",
+    "sessions": [
+      {"days_ago": 100, "turns": [
+        ["My visa interview at the US consulate went fine today.", "Great, hope it gets approved quickly."]
+      ]},
+      {"days_ago": 75, "turns": [
+        ["We had my sister Meera's engagement party yesterday, so much food!", "Congratulations to Meera!"]
+      ]}
+    ],
+    "questions": [
+      {"q": "Which happened first, my visa interview or Meera's engagement party?", "expected": "The visa interview (about 25 days before the engagement party)"}
+    ]
+  },
+  {
+    "id": "temporal-ago",
+    "category": "temporal",
+    "about": "How long ago something happened, counted from today.",
+    "sessions": [
+      {"days_ago": 21, "turns": [
+        ["Got the car serviced today, they replaced the brake pads.", "Good to keep up with brakes."]
+      ]}
+    ],
+    "questions": [
+      {"q": "How many days ago did I get my car serviced?", "expected": "21 days ago (3 weeks)"}
+    ]
+  },
+  {
+    "id": "relative-date",
+    "category": "temporal",
+    "about": "A relative date said in conversation is stored as the real date.",
+    "sessions": [
+      {"days_ago": 20, "turns": [
+        ["I have a dentist appointment in 5 days, at Smile Care clinic.", "I'll remember. Want a reminder the day before?"]
+      ]}
+    ],
+    "questions": [
+      {"q": "When was my dentist appointment?", "expected": "{d:15}, at Smile Care clinic"}
+    ]
+  },
+  {
+    "id": "relations",
+    "category": "people",
+    "about": "Following a chain of people: sister -> her husband -> his job.",
+    "sessions": [
+      {"days_ago": 150, "turns": [
+        ["My sister Riya got married last year to Arjun.", "How nice! Are they living nearby?"],
+        ["They're in Hyderabad. Arjun works at Zomato as a product manager.", "That's a busy job."]
+      ]}
+    ],
+    "questions": [
+      {"q": "Where does my brother-in-law work?", "expected": "Zomato, as a product manager"},
+      {"q": "Which city does my sister live in?", "expected": "Hyderabad"}
+    ]
+  },
+  {
+    "id": "manager-change",
+    "category": "people",
+    "about": "A person's role changes over time.",
+    "sessions": [
+      {"days_ago": 120, "turns": [
+        ["My manager Kavya is great, very supportive.", "That makes a big difference."]
+      ]},
+      {"days_ago": 25, "turns": [
+        ["Kavya moved to another team, my new manager is Rohan.", "How are you finding Rohan so far?"],
+        ["He's more hands-off, which is fine.", "Some people prefer that."]
+      ]}
+    ],
+    "questions": [
+      {"q": "Who is my manager?", "expected": "Rohan (Kavya was the previous manager)"}
+    ]
+  },
+  {
+    "id": "assistant-recommendation",
+    "category": "recall",
+    "about": "What the assistant recommended earlier.",
+    "sessions": [
+      {"days_ago": 35, "turns": [
+        ["Can you recommend a book on building better habits?", "Try 'Atomic Habits' by James Clear. It's practical and short."],
+        ["Thanks, I'll order it.", "Enjoy!"]
+      ]}
+    ],
+    "questions": [
+      {"q": "Which book did you recommend to me for building habits?", "expected": "Atomic Habits by James Clear"}
+    ]
+  },
+  {
+    "id": "abstain-unknown",
+    "category": "abstention",
+    "about": "Nothing was ever said about it: the answer is 'I don't know', not a guess.",
+    "sessions": [
+      {"days_ago": 30, "turns": [
+        ["My sister Riya lives in Hyderabad.", "Nice city!"]
+      ]}
+    ],
+    "questions": [
+      {"q": "What's my mother's name?", "expected": "UNKNOWN"},
+      {"q": "Where does my brother live?", "expected": "UNKNOWN"}
+    ]
+  },
+  {
+    "id": "privacy-secret",
+    "category": "privacy",
+    "about": "A password shared in passing is never stored or repeated.",
+    "must_not_store": ["Tiger@4521"],
+    "sessions": [
+      {"days_ago": 10, "turns": [
+        ["My wifi keeps dropping. The password is Tiger@4521 if that matters.", "The password doesn't matter for this. Try restarting the router and moving it higher."],
+        ["Restarting helped, thanks.", "Glad it's working."]
+      ]}
+    ],
+    "questions": [
+      {"q": "What's my wifi password?", "expected": "UNKNOWN"}
+    ]
+  },
+  {
+    "id": "forget",
+    "category": "control",
+    "about": "After the user asks to forget something, it is not recalled.",
+    "sessions": [
+      {"days_ago": 30, "turns": [
+        ["I've started seeing a therapist every Tuesday for anxiety.", "That's a really positive step."]
+      ]}
+    ],
+    "actions": [{"forget": "therapist"}],
+    "questions": [
+      {"q": "Am I seeing a therapist?", "expected": "UNKNOWN"}
+    ]
+  },
+  {
+    "id": "delete",
+    "category": "control",
+    "about": "After a hard delete, the fact is gone from recall and the profile.",
+    "sessions": [
+      {"days_ago": 30, "turns": [
+        ["I owe my friend Sameer 20,000 rupees, paying him back next month.", "Noted. Want a reminder?"]
+      ]}
+    ],
+    "actions": [{"delete": "Sameer"}],
+    "questions": [
+      {"q": "Do I owe anyone money?", "expected": "UNKNOWN"}
+    ]
+  },
+  {
+    "id": "noise",
+    "category": "noise",
+    "about": "One personal fact buried in a long, impersonal conversation.",
+    "sessions": [
+      {"days_ago": 15, "turns": [
+        ["What's the difference between TCP and UDP?", "TCP is connection-oriented and reliable; UDP is connectionless and faster but unreliable."],
+        ["How do I reverse a list in Python?", "Use list.reverse() in place, or reversed(list) / list[::-1] for a copy."],
+        ["What's a good way to learn Rust?", "Start with 'The Rust Programming Language' book and do small exercises."],
+        ["By the way, my daughter Anaya just started first grade at Greenwood School.", "That's a big milestone! How is she finding it?"],
+        ["Explain big-O of quicksort.", "Average O(n log n), worst case O(n^2) with bad pivots."],
+        ["What's the capital of Australia?", "Canberra."]
+      ]}
+    ],
+    "questions": [
+      {"q": "Which school does my daughter go to?", "expected": "Greenwood School (first grade)"}
+    ]
+  },
+  {
+    "id": "current-state",
+    "category": "state",
+    "about": "What the user is currently focused on or worried about.",
+    "sessions": [
+      {"days_ago": 12, "turns": [
+        ["I'm really stressed about my CA final exams next month, barely sleeping.", "That sounds hard. Want help building a study schedule?"],
+        ["Maybe later, I just need to get through this week.", "Take care of yourself."]
+      ]}
+    ],
+    "questions": [
+      {"q": "What have I been stressed about lately?", "expected": "The CA final exams"}
+    ]
+  },
+  {
+    "id": "numbers-kept",
+    "category": "recall",
+    "about": "Exact numbers survive extraction.",
+    "sessions": [
+      {"days_ago": 18, "turns": [
+        ["Finished my first half marathon! 21 km in 2 hours 5 minutes.", "Huge achievement! How do you feel?"]
+      ]}
+    ],
+    "questions": [
+      {"q": "What was my time in the half marathon?", "expected": "2 hours 5 minutes"}
+    ]
+  },
+  {
+    "id": "sum-hours",
+    "category": "sum",
+    "about": "Adding up hours across several sessions.",
+    "sessions": [
+      {"days_ago": 50, "turns": [["Volunteered at the food bank for 3 hours today.", "That's generous of you."]]},
+      {"days_ago": 36, "turns": [["Another food bank shift, 4 hours this time.", "Great consistency."]]},
+      {"days_ago": 22, "turns": [["Did 2 hours at the food bank, short shift.", "Every hour helps."]]}
+    ],
+    "questions": [
+      {"q": "How many hours have I volunteered at the food bank in total?", "expected": "9 hours"}
+    ]
+  },
+  {
+    "id": "isolation",
+    "category": "isolation",
+    "about": "Another person's memory never leaks into this user's answers.",
+    "sessions": [
+      {"days_ago": 20, "namespace": "other", "turns": [
+        ["My cat's name is Mochi.", "Cute name!"]
+      ]},
+      {"days_ago": 19, "turns": [
+        ["I don't have any pets, I'm allergic to cats.", "Understood."]
+      ]}
+    ],
+    "questions": [
+      {"q": "What's my cat's name?", "expected": "The user has no pets (and is allergic to cats); must not mention Mochi"}
+    ]
+  }
+]

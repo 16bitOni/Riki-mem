@@ -179,6 +179,27 @@ class RikiMemory:
         """Delete everything stored for one user."""
         return await control.delete_user(self.db, user_id)
 
+    # -- namespaces (see Docs/SCOPE_MODEL.md) -------------------------------
+
+    async def create_namespace(
+        self, user_id: str, *, tenant_id: str = "default", kind: str = "user", name: str = "",
+        timezone: str | None = None,
+    ):
+        """Create a memory namespace owned by ``tenant_id``; ``kind`` is user, agent,
+        team or org. Idempotent; refuses to move an existing namespace to another tenant."""
+        return await control.create_namespace(
+            self.db, user_id, tenant_id=tenant_id, kind=kind, name=name,
+            timezone_name=timezone or self.config.default_timezone,
+        )
+
+    async def list_namespaces(self, tenant_id: str | None = None, **options):
+        """Namespaces, optionally one tenant's (``kind``, ``limit``, ``offset`` also accepted)."""
+        return await control.list_namespaces(self.db, tenant_id, **options)
+
+    async def delete_tenant(self, tenant_id: str) -> int:
+        """Delete every namespace of a tenant and everything in them."""
+        return await control.delete_tenant(self.db, tenant_id)
+
     async def export_user(self, user_id: str, target, **options) -> dict:
         """Write a user's memory to JSONL (a path or a text file); see
         :func:`riki_memory.control.export_user` for ``include_embeddings`` and ``since``."""

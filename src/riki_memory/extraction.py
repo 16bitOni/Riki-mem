@@ -49,22 +49,22 @@ Rules:
   if today is 2024-02-15 and the user says "last Saturday", write "on February 10th, 2024"
   in content and set event_at to that date. Never store relative dates like "last week" or
   "two months ago" — they become meaningless later.
-- Preserve the specific details and terminology from the conversation. If the user describes
-  a "GPS system not functioning correctly", use those exact words, not a paraphrase like
-  "GPS issue". Specificity matters for later retrieval.
+- Preserve the specific details and terminology from the conversation. If the user says
+  "the oven runs about 20 degrees hot", keep those words, not a paraphrase like
+  "oven problem". Specificity matters for later retrieval.
 - Tag each memory with 2-5 short lowercase topic labels in the `tags` field. Tags describe
-  WHAT the memory is about — be specific. Examples: "wedding", "bike-purchase", "doctor-visit",
-  "model-kit", "guitar-lesson", "road-trip", "streaming-service", "aquarium", "baking",
-  "charity-event", "house-hunting". Use hyphens for multi-word tags. Good tags enable
-  later queries like "how many weddings" or "total spending on bike gear".
-- NEVER drop numbers that belong to the memory. If the user says "$250 for the helmet",
-  the memory MUST contain "$250". If "drove 6 hours", the memory MUST say "6 hours".
+  WHAT the memory is about — be specific. Examples: "job-interview", "kitchen-renovation",
+  "marathon-training", "tax-filing", "school-admission", "visa-application", "food-allergy",
+  "rent". Use hyphens for multi-word tags. Good tags enable later queries like
+  "how many interviews" or "total spent on the renovation".
+- NEVER drop numbers that belong to the memory. If the user says "$1,200 for the sofa",
+  the memory MUST contain "$1,200". If "ran 21 km", the memory MUST say "21 km".
 - NEVER normalize tense in a way that loses occurrence information. "attended a workshop"
   must stay past tense. "plans to buy" must NOT become "bought". "used to own" must
   NOT become "owns". The tense encodes whether something happened vs. is planned.
-- Resolve entity references within the session: if turn 1 mentions "my guitar" and
-  turn 3 identifies it as "the Fender Stratocaster", use the specific name in the memory.
-  "My cousin's wedding" should become "Rachel and Mike's wedding" if names are given.
+- Resolve entity references within the session: if turn 1 mentions "my laptop" and
+  turn 3 identifies it as "the ThinkPad X1", use the specific name in the memory.
+  "My manager's farewell" should become "Priya's farewell dinner" if names are given.
 - Return an empty list when nothing is worth saving. That is the most common correct answer.
 
 INSTANCE EXTRACTION (in the `instances` list INSIDE each memory):
@@ -73,25 +73,25 @@ inside that memory. An instance belongs only to the memory that mentions it — 
 copy an instance onto other memories from the same turn.
 - kind: exactly one of event, item, visit, trip, media, person, activity, money, other.
 - subject: the everyday noun you would count it by, singular — the X in "how many X".
-  Prefer the broader class a person would ask about ("instrument" for a guitar,
-  "doctor" for a dermatologist, "wedding" for a wedding). Reuse a KNOWN SUBJECT
+  Prefer the broader class a person would ask about ("appliance" for a dishwasher,
+  "course" for a Python bootcamp, "trip" for a weekend in Goa). Reuse a KNOWN SUBJECT
   whenever one fits; invent a new one only when none does.
 - instance_key: normalized lowercase-hyphenated identity string. The same
-  real-world thing MUST always get the same key. "Rachel and Mike's wedding"
-  and "my cousin's wedding" (if same event) = "rachel-mike-wedding".
-  "Dr. Lee the orthopedist" = "dr-lee-orthopedics". Resolve pronouns.
+  real-world thing MUST always get the same key. "Priya's farewell dinner"
+  and "my manager's farewell" (if same event) = "priya-farewell-dinner".
+  "Dr. Mehta the dentist" = "dr-mehta-dentist". Resolve pronouns.
 - display_name: human-readable name for this specific instance.
 - status: MANDATORY. 'occurred' for completed events/purchases/attendances.
   'current' for things currently owned or active. 'planned' for stated future
   intentions ("plans to return"). 'desired' for wishes ("wants to try").
-  'former' for sold/ended/no-longer-true ("sold the drum set", "used to have").
+  'former' for sold/ended/no-longer-true ("sold the old car", "used to have").
   NEVER default to 'occurred' — match the tense of the source text.
 - numeric_value + unit: ONLY if the source text explicitly states a number.
-  Never infer amounts. "$250" → numeric_value=250, unit="USD".
-  "drove 6 hours" → numeric_value=6, unit="hours".
-- One sentence can yield zero, one, or many instances. "Bought a B-29 and a
-  Camaro model" = two instances. "Attended multiple festivals" = zero instances
-  (too vague — only extract specific named things).
+  Never infer amounts. "$1,200" → numeric_value=1200, unit="USD".
+  "ran 21 km" → numeric_value=21, unit="km".
+- One sentence can yield zero, one, or many instances. "Bought a standing desk
+  and an office chair" = two instances. "Went to a few concerts this year" = zero
+  instances (too vague — only extract specific named things).
 - date: when the instance occurred, if stated. Use absolute dates."""
 
 

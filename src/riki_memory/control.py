@@ -28,7 +28,7 @@ from .config import MemoryConfig
 from .db import Database
 from .entities import prune_orphaned_entities
 from .llm import LLMProvider
-from .models import Entity, EntityRelation, Episode, EpisodeMemory, Instance, Memory, MemoryEntity, User
+from .models import NAMESPACE_KINDS, Entity, EntityRelation, Episode, EpisodeMemory, Instance, Memory, MemoryEntity, User
 from .schemas import InstanceItem, MemoryCreate
 from .store import save_memory
 
@@ -173,6 +173,62 @@ async def delete_user(db: Database, user_id: str) -> bool:
     async with db.session_scope() as session:
         result = await session.execute(delete(User).where(User.id == user_id))
         return result.rowcount > 0
+
+
+# -- namespaces -----------------------------------------------------------------
+
+
+async def create_namespace(
+    db: Database,
+    user_id: str,
+    *,
+    tenant_id: str = "default",
+    kind: str = "user",
+    name: str = "",
+    timezone_name: str | None = None,
+) -> User:
+    """Create a namespace, or return it if it already exists with the same owner.
+
+    Namespaces are also created implicitly (tenant "default", kind "user") the
+    first time something is saved for a new ``user_id``; call this first to set
+    the tenant or kind. Moving an existing namespace to another tenant raises
+    instead of happening silently.
+    """
+    if kind not in NAMESPACE_KINDS:
+        raise ValueError(f"kind must be one of {', '.join(NAMESPACE_KINDS)}")
+    async with db.session_scope() as session:
+        await session.execute(
+            insert(User)
+            .values(id=user_id, tenant_id=tenant_id, kind=kind, name=name or user_id,
+                    timezone=timezone_name or "UTC")
+            .on_conflict_do_nothing()
+        )
+        user = await session.scalar(select(User).where(User.id == user_id))
+        if (user.tenant_id, user.kind) != (tenant_id, kind):
+            raise ValueError(
+                f"namespace {user_id!r} already exists as tenant={user.tenant_id!r}, kind={user.kind!r}"
+            )
+        return user
+
+
+async def list_namespaces(
+    db: Database, tenant_id: str | None = None, *, kind: str | None = None, limit: int = 100, offset: int = 0
+) -> list[User]:
+    """Namespaces, oldest first, optionally only one tenant's or one kind."""
+    stmt = select(User).order_by(User.created_at, User.id).limit(limit).offset(offset)
+    if tenant_id is not None:
+        stmt = stmt.where(User.tenant_id == tenant_id)
+    if kind is not None:
+        stmt = stmt.where(User.kind == kind)
+    async with db.session_scope() as session:
+        return list((await session.scalars(stmt)).all())
+
+
+async def delete_tenant(db: Database, tenant_id: str) -> int:
+    """Delete every namespace of one tenant and everything in them. Returns namespaces deleted."""
+    async with db.session_scope() as session:
+        result = await session.execute(delete(User).where(User.tenant_id == tenant_id))
+        return result.rowcount
 
 
 # -- export / import ------------------------------------------------------------

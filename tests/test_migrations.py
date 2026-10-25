@@ -65,18 +65,21 @@ async def test_the_models_match_the_migrations(memory):
 async def test_a_database_from_before_migrations_keeps_its_data(provider):
     name = await _fresh_db()
     url = _url_for(name)
-    # How databases were made before migrations: the extension and create_all, no version table.
-    conn = await asyncpg.connect(url)
-    await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    await conn.close()
+    # What create_all used to leave behind: the baseline schema and no version table.
+    from alembic import command
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from riki_memory.db import async_url
 
     engine = create_async_engine(async_url(url))
     async with engine.begin() as sa_conn:
-        await sa_conn.run_sync(Base.metadata.create_all)
+        await sa_conn.run_sync(lambda sync: command.upgrade(migrate._config(sync), migrate.BASELINE))
+        await sa_conn.exec_driver_sql(f"DROP TABLE {migrate.VERSION_TABLE}")
     await engine.dispose()
+    conn = await asyncpg.connect(url)
+    assert await conn.fetchval("SELECT count(*) FROM information_schema.columns "
+                               "WHERE table_name = 'users' AND column_name = 'tenant_id'") == 0
+    await conn.close()
 
     mem = RikiMemory(database_url=url, llm=provider, config=MemoryConfig())
     try:

@@ -222,3 +222,53 @@ async def test_import_rejects_a_file_that_is_not_an_export(memory):
 
     with pytest.raises(ValueError, match="not a riki-memory export"):
         await memory.import_user(io.StringIO('{"hello": 1}\n'))
+
+
+# ---------- namespaces ----------
+
+
+async def test_namespaces_have_a_tenant_and_a_kind(memory):
+    ns = await memory.create_namespace("acme/eng-team", tenant_id="acme", kind="team", name="Engineering")
+    assert (ns.tenant_id, ns.kind, ns.name) == ("acme", "team", "Engineering")
+    again = await memory.create_namespace("acme/eng-team", tenant_id="acme", kind="team")
+    assert again.id == ns.id  # idempotent
+
+
+async def test_implicit_namespaces_belong_to_the_default_tenant(memory):
+    await memory.save(MemoryCreate(user_id="solo", content="Solo user fact."))
+    (ns,) = await memory.list_namespaces("default")
+    assert (ns.id, ns.tenant_id, ns.kind) == ("solo", "default", "user")
+
+
+async def test_a_namespace_is_never_moved_to_another_tenant_silently(memory):
+    import pytest
+
+    await memory.create_namespace("acme/alice", tenant_id="acme")
+    with pytest.raises(ValueError, match="already exists"):
+        await memory.create_namespace("acme/alice", tenant_id="globex")
+    with pytest.raises(ValueError, match="kind must be one of"):
+        await memory.create_namespace("x", kind="planet")
+
+
+async def test_delete_tenant_removes_only_that_tenant(memory):
+    for user in ("acme/alice", "acme/bob"):
+        await memory.create_namespace(user, tenant_id="acme")
+        await memory.save(MemoryCreate(user_id=user, content=f"{user} likes tea."))
+    await memory.create_namespace("globex/carol", tenant_id="globex")
+    await memory.save(MemoryCreate(user_id="globex/carol", content="Carol likes coffee."))
+
+    assert await memory.delete_tenant("acme") == 2
+    assert [n.id for n in await memory.list_namespaces()] == ["globex/carol"]
+    assert await _count(memory, Memory, Memory.user_id.like("acme/%")) == 0
+
+
+async def test_export_keeps_the_namespace_owner(memory):
+    await memory.create_namespace("acme/alice", tenant_id="acme", kind="user")
+    await memory.save(MemoryCreate(user_id="acme/alice", content="Alice likes tea."))
+    buffer = io.StringIO()
+    await memory.export_user("acme/alice", buffer)
+    await memory.delete_user("acme/alice")
+    buffer.seek(0)
+    await memory.import_user(buffer)
+    (ns,) = await memory.list_namespaces("acme")
+    assert (ns.id, ns.kind) == ("acme/alice", "user")

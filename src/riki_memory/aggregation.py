@@ -168,9 +168,9 @@ class SubjectMembers(BaseModel):
 
 _MEMBERS_PROMPT = """A person asks how many "{term}" they have, did or own. These are \
 labels from their stored records. Return the labels that ARE a "{term}" or a kind of \
-"{term}" (asked "instrument": guitar and piano count). Leave out labels that are only \
-related, used with it, or a different thing of the same sort (asked "instrument": \
-guitar-lesson and concert do not count; asked "dog": cat does not count). \
+"{term}" (asked "appliance": dishwasher and fridge count). Leave out labels that are only \
+related, used with it, or a different thing of the same sort (asked "appliance": \
+dishwasher-repair and kitchen do not count; asked "dog": cat does not count). \
 If none fit, return an empty list."""
 
 

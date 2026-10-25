@@ -124,6 +124,14 @@ def extract_temporal_anchors(text: str) -> list[str]:
     return []
 
 
+_COUNTED_NOUN_RE = re.compile(
+    r"\b(?:how many|number of|count of|total number of|how much (?:money )?(?:did i |have i )?"
+    r"(?:spend|spent|pay|paid|raise|raised|earn|earned) (?:on|for)|spent on|paid for)\s+"
+    r"(?:different |distinct |separate |my |the |of )*"
+    r"([a-z][a-z'-]*(?: [a-z][a-z'-]*)?)"
+)
+
+
 def _tags(text: str) -> list[str]:
     """Extract likely topic tags from the query — especially for aggregation questions."""
     if not _AGGREGATION_RE.search(text):
@@ -135,19 +143,13 @@ def _tags(text: str) -> list[str]:
         if tag and tag not in seen:
             seen.add(tag)
             tags.append(tag)
-    nouns = re.findall(
-        r"\b(wedding|trip|doctor|visit|purchase|expense|model.?kit|instrument|"
-        r"fish|tank|aquarium|game|class|festival|concert|book|movie|recipe|"
-        r"bak(?:e|ing)|cook(?:ing)?|bike|guitar|piano|drum|project|pet|"
-        r"charity|event|property|house|apartment|service|subscription|"
-        r"device|gadget|appliance|car|vehicle)\w*\b",
-        text.lower(),
-    )
-    for noun in nouns:
-        tag = noun.replace(" ", "-")
-        if tag not in seen:
-            seen.add(tag)
-            tags.append(tag)
+    # The thing being counted or summed, whatever it is: "how many X", "spent on X".
+    for noun in _COUNTED_NOUN_RE.findall(text.lower()):
+        words = [w for w in noun.split() if w not in STOPWORDS]
+        for tag in ("-".join(words), *words[-1:]):  # "doctor-visit", then "visit"
+            if tag and tag not in seen:
+                seen.add(tag)
+                tags.append(tag)
     for kw in _keywords(text):
         tag = kw.lower().replace(" ", "-")
         if len(tag) >= 3 and tag not in seen and tag not in STOPWORDS:
