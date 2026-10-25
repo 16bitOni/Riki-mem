@@ -110,6 +110,18 @@ async def main() -> None:
         "--save-results", default=None,
         help="Save detailed results to a JSON file.",
     )
+    parser.add_argument(
+        "--enable-episodes", action="store_true",
+        help="Enable the episodic memory layer (generates session summaries during ingestion).",
+    )
+    parser.add_argument(
+        "--retrieval-mode", choices=["single", "agentic"], default="single",
+        help="Retrieval strategy: 'single' (one-shot) or 'agentic' (multi-step with reflector).",
+    )
+    parser.add_argument(
+        "--skip-backfill", action="store_true",
+        help="Skip category facts backfill (use when table is already populated).",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -145,7 +157,12 @@ async def main() -> None:
     print(f"  {len(dataset.questions)} questions, {len(dataset.sessions)} unique sessions")
 
     # -- build memory -------------------------------------------------------
-    memory = build_memory(env)
+    config_overrides = {}
+    if args.enable_episodes:
+        config_overrides["enable_episodes"] = True
+    if args.retrieval_mode != "single":
+        config_overrides["retrieval_mode"] = args.retrieval_mode
+    memory = build_memory(env, **config_overrides)
     await memory.init()
 
     try:
@@ -155,14 +172,26 @@ async def main() -> None:
             ingest_report = await ingest_sessions(
                 memory, args.user_id, dataset.sessions, progress_fn=progress_bar,
             )
+            episodes_msg = f", {ingest_report.get('episodes', 0)} episodes" if ingest_report.get("episodes") else ""
             print(
                 f"  done: {ingest_report['ingested']} turn pairs from "
-                f"{ingest_report['sessions']} sessions in "
+                f"{ingest_report['sessions']} sessions{episodes_msg} in "
                 f"{ingest_report['elapsed_s']}s"
                 + (f" ({ingest_report['errors']} errors)" if ingest_report["errors"] else "")
             )
         else:
             print("\nSkipping ingestion (--skip-ingest)")
+
+        # -- backfill category facts ----------------------------------------
+        if not args.skip_backfill:
+            print("\nBackfilling category facts ...")
+            facts_saved = await memory.backfill_category_facts(args.user_id)
+            if facts_saved:
+                print(f"  saved {facts_saved} new category facts")
+            else:
+                print("  already up-to-date")
+        else:
+            print("\nSkipping category facts backfill (--skip-backfill)")
 
         # -- query + score --------------------------------------------------
         print(f"\nEvaluating ({args.judge} judge) ...")

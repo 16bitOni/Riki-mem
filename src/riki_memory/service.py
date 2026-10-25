@@ -19,9 +19,10 @@ Typical wiring in a chat loop::
 """
 
 import logging
+from datetime import datetime
 from typing import Awaitable, Callable
 
-from . import extraction, maintenance, recall, store
+from . import episode, extraction, maintenance, recall, store
 from .config import MemoryConfig
 from .db import Database
 from .evaluation import EvalCase, run_eval
@@ -105,6 +106,19 @@ class RikiMemory:
             at=at,
         )
 
+    async def close_session(
+        self, user_id: str, session_key: str, date=None
+    ):
+        """Generate an episode summary for a completed session.
+
+        Call after all turns of a session have been ingested. Finds memories
+        whose source_key starts with ``session_key``, summarises them, and
+        links the episode to its atomic memories. Idempotent.
+        """
+        return await episode.close_session(
+            self.db, self.llm, self.config, user_id, session_key, date=date
+        )
+
     async def forget(self, user_id: str, memory_id: str) -> bool:
         """Soft-delete a memory. Forgetting is final — re-saving the same
         sentence will not resurrect it."""
@@ -121,11 +135,19 @@ class RikiMemory:
     # -- reading -----------------------------------------------------------
 
     async def recall(
-        self, user_id: str, query: str, recent_chat: str = ""
+        self, user_id: str, query: str, recent_chat: str = "",
+        not_after: datetime | None = None,
     ) -> tuple[list[Memory], dict]:
         """Plan + hybrid search. Returns ``(memories, report)`` — the report
-        carries per-channel hits, timings and scores for debugging."""
-        return await recall.search(self.db, self.llm, self.config, user_id, query, recent_chat)
+        carries per-channel hits, timings and scores for debugging.
+
+        ``not_after``: exclude memories with event_at after this datetime
+        (use the question date so future-dated memories don't pollute results).
+        """
+        return await recall.search(
+            self.db, self.llm, self.config, user_id, query, recent_chat,
+            not_after=not_after,
+        )
 
     async def context(
         self, user_id: str, message: str, recent_chat: str = "", name: str = ""
@@ -148,6 +170,14 @@ class RikiMemory:
         return await maintenance.consolidate_memories(
             self.db, self.llm, self.config, user_id, dry_run=dry_run
         )
+
+    async def backfill_category_facts(self, user_id: str) -> int:
+        """Populate category_facts for memories ingested before the table existed.
+
+        Idempotent — skips memories already processed.  Returns count of new rows.
+        """
+        from .category_facts import backfill_user_facts
+        return await backfill_user_facts(self.db, user_id)
 
     async def evaluate(self, user_id: str, cases: list[EvalCase]) -> dict:
         return await run_eval(self.db, self.llm, self.config, user_id, cases)

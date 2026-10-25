@@ -1,11 +1,12 @@
 """Hybrid retrieval.
 
-Four independent "channels" each return a ranked list of memory ids:
+Five independent "channels" each return a ranked list of memory ids:
 
     keyword  - exact words (SQLite FTS5, BM25 ranked)
     semantic - similar meaning (brute-force cosine over the user's vectors)
     time     - inside a date window
     graph    - linked to a named person/place/project (and their direct neighbours)
+    episode  - memories from sessions whose summary matches the query
 
 The lists are merged with weighted Reciprocal Rank Fusion, so a memory found by
 several channels wins. Important memories get a small boost, and an optional
@@ -21,13 +22,13 @@ import time
 from datetime import datetime
 from typing import TypeVar
 
-from sqlalchemy import func, literal, or_, select, union_all
+from sqlalchemy import String, func, literal, or_, select, union_all
 
 from .config import MemoryConfig
 from .db import Database
 from .keyword import CHANNEL_DEPTH, live_clauses
 from .llm import LLMProvider
-from .models import Entity, EntityRelation, Memory, MemoryEntity
+from .models import Entity, EntityRelation, Episode, EpisodeMemory, Memory, MemoryEntity
 from .schemas import RetrievalPlan
 from .similarity import cosine_similarity
 
@@ -80,8 +81,10 @@ async def semantic_search(
     text_query: str,
     start: datetime | None,
     end: datetime | None,
+    vector: list[float] | None = None,
 ) -> list[str]:
-    vector = await llm.embed(text_query)
+    if vector is None:
+        vector = await llm.embed(text_query)
     async with db.session_scope() as session:
         rows = (
             await session.execute(
@@ -202,6 +205,101 @@ async def graph_search(
         return [row[0] for row in rows]
 
 
+async def tag_search(
+    db: Database,
+    llm: LLMProvider,
+    config: MemoryConfig,
+    user_id: str,
+    tags: list[str],
+) -> list[str]:
+    """Tag channel: return ALL active memories matching ANY of the given tags.
+
+    Unlike other channels this is exhaustive — no CHANNEL_DEPTH cap — because
+    aggregation queries ("how many weddings?") need every instance.
+
+    Uses semantic expansion: query tags are broadened to include similar tags
+    from the user's vocabulary so "charity" also matches "fundraiser".
+    """
+    if not tags:
+        return []
+    normalised = [t.strip().lower().replace(" ", "-") for t in tags if t.strip()]
+    if not normalised:
+        return []
+
+    from .tags import expand_tags_semantically
+
+    try:
+        search_tags = await expand_tags_semantically(
+            llm, db, user_id, normalised, config.tag_similarity_threshold
+        )
+    except Exception:
+        log.exception("semantic tag expansion failed; falling back to exact tags")
+        search_tags = normalised
+
+    async with db.session_scope() as session:
+        conditions = [Memory.tags.cast(String).like(f'%"{tag}"%') for tag in search_tags]
+        stmt = (
+            select(Memory.id)
+            .where(
+                Memory.user_id == user_id,
+                Memory.is_active.is_(True),
+                Memory.tags.is_not(None),
+                or_(*conditions),
+            )
+            .order_by(Memory.importance.desc(), Memory.created_at.desc())
+            .limit(200)
+        )
+        return list((await session.scalars(stmt)).all())
+
+
+async def episode_search(
+    db: Database,
+    llm: LLMProvider,
+    config: MemoryConfig,
+    user_id: str,
+    text_query: str,
+    vector: list[float] | None = None,
+) -> list[str]:
+    """Episode channel: sessions whose summary matches the query."""
+    if vector is None:
+        vector = await llm.embed(text_query)
+    async with db.session_scope() as session:
+        rows = (
+            await session.execute(
+                select(Episode.id, Episode.embedding).where(
+                    Episode.user_id == user_id,
+                    Episode.embedding.is_not(None),
+                    Episode.embedding_model == llm.embedding_model_id,
+                )
+            )
+        ).all()
+
+    matching = [
+        (eid, cosine_similarity(vec, vector))
+        for eid, vec in rows
+        if vec and cosine_similarity(vec, vector) >= config.episode_similarity_threshold
+    ]
+    if not matching:
+        return []
+    matching.sort(key=lambda pair: pair[1], reverse=True)
+
+    async with db.session_scope() as session:
+        memory_ids = (
+            await session.scalars(
+                select(EpisodeMemory.memory_id)
+                .join(Memory, Memory.id == EpisodeMemory.memory_id)
+                .where(
+                    EpisodeMemory.episode_id.in_([eid for eid, _ in matching]),
+                    Memory.is_active.is_(True),
+                    Memory.user_id == user_id,
+                )
+                .limit(CHANNEL_DEPTH)
+            )
+        ).all()
+
+    return list(memory_ids)
+
+
 async def _timed(name: str, coroutine):
     """Run one channel. A broken channel must not break the whole recall:
     it returns no hits, and the failure is logged."""
@@ -235,23 +333,43 @@ async def hybrid_search(
     dashboard's Retrieval tab read from trace spans.
     """
     limit = limit or config.recall_limit
+
+    # Embed once, share the vector between semantic and episode channels.
+    query_vector = None
+    needs_vector = bool(plan.semantic_query)
+    if needs_vector:
+        try:
+            query_vector = await llm.embed(plan.semantic_query)
+        except Exception:
+            log.exception("query embedding failed; semantic and episode channels will be skipped")
+
     channels = {}
     if plan.keywords:
         channels["keyword"] = keyword_search(db, user_id, plan.keywords, None, None)
-    if plan.semantic_query:
+    if plan.semantic_query and query_vector is not None:
         channels["semantic"] = semantic_search(
-            db, llm, config, user_id, plan.semantic_query, None, None
+            db, llm, config, user_id, plan.semantic_query, None, None,
+            vector=query_vector,
         )
     if plan.start or plan.end:
         channels["time"] = time_window(db, user_id, plan.start, plan.end)
     if config.enable_entities and (plan.entities or plan.relation_words):
         channels["graph"] = graph_search(db, config, user_id, plan.entities, plan.relation_words)
+    if config.enable_episodes and plan.semantic_query and query_vector is not None:
+        channels["episode"] = episode_search(
+            db, llm, config, user_id, plan.semantic_query,
+            vector=query_vector,
+        )
+    if plan.tags:
+        channels["tag"] = tag_search(db, llm, config, user_id, plan.tags)
 
     weights = {
         "keyword": config.weight_keyword,
         "semantic": config.weight_semantic,
         "graph": config.weight_graph,
         "time": config.weight_time,
+        "episode": config.weight_episode,
+        "tag": config.weight_tag,
     }
     outcomes = await asyncio.gather(*(_timed(name, task) for name, task in channels.items()))
     results = [ids for _, ids, _, _ in outcomes]
@@ -266,6 +384,7 @@ async def hybrid_search(
             "semantic_query": plan.semantic_query,
             "entities": plan.entities,
             "relation_words": plan.relation_words,
+            "tags": plan.tags,
             "start": plan.start.isoformat() if plan.start else None,
             "end": plan.end.isoformat() if plan.end else None,
         },

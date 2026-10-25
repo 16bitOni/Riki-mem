@@ -25,6 +25,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
@@ -91,6 +92,7 @@ class Memory(Base):
     wants_embedding: Mapped[bool] = mapped_column(Boolean, default=False)
     embedding_model: Mapped[str | None] = mapped_column(String(100))
     embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tags = mapped_column(JSON, nullable=True, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     superseded_by_id: Mapped[str | None] = mapped_column(
         ForeignKey("memories.id", ondelete="SET NULL")
@@ -161,4 +163,81 @@ class EntityRelation(Base):
     __table_args__ = (
         UniqueConstraint("subject_id", "predicate", "target_id", name="relation_unique"),
         Index("relation_target", "target_id"),
+    )
+
+
+class Episode(Base):
+    """A session-level summary linking the atomic memories extracted from one conversation."""
+
+    __tablename__ = "episodes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    session_key: Mapped[str] = mapped_column(String(512))
+    summary: Mapped[str] = mapped_column(Text)
+    date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    embedding = mapped_column(VectorJSON, nullable=True, deferred=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "session_key", name="episode_user_session_unique"),
+        Index("episode_user_created", "user_id", "created_at"),
+    )
+
+
+class EpisodeMemory(Base):
+    """Junction linking an episode to its constituent atomic memories."""
+
+    __tablename__ = "episode_memories"
+
+    episode_id: Mapped[str] = mapped_column(
+        ForeignKey("episodes.id", ondelete="CASCADE"), primary_key=True
+    )
+    memory_id: Mapped[str] = mapped_column(
+        ForeignKey("memories.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    __table_args__ = (Index("episode_memory_memory", "memory_id"),)
+
+
+class CategoryFact(Base):
+    """One enumerable instance of a tagged category for a user.
+
+    Written at save_memory() time for every memory whose tags contain a
+    recognised aggregation category (e.g. "charity-event", "instrument",
+    "wedding").  Enables O(1) SQL COUNT/SUM for "how many X" queries instead
+    of relying on top-k vector retrieval.
+
+    ``item_name``: the specific instance name extracted from the memory content.
+    ``numeric_value`` / ``unit``: optional (e.g. amount raised, expense amount).
+    ``date``: event_at from the source memory.
+    ``source_memory_id``: the memory that produced this fact (for audit/dedup).
+    """
+
+    __tablename__ = "category_facts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(100))
+    item_name: Mapped[str] = mapped_column(String(500))
+    numeric_value: Mapped[float | None] = mapped_column(nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_memory_id: Mapped[str] = mapped_column(
+        ForeignKey("memories.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        # One fact per (user, category, source memory) — prevents double-counting
+        # if save_memory is retried.
+        UniqueConstraint(
+            "user_id", "category", "source_memory_id",
+            name="category_fact_user_category_memory_unique",
+        ),
+        Index("category_fact_user_category", "user_id", "category"),
     )

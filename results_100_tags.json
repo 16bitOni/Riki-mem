@@ -1,0 +1,358 @@
+{
+  "report": {
+    "overall": {
+      "count": 20,
+      "hit_rate": 0.9,
+      "mrr": 0.8
+    },
+    "by_category": {
+      "temporal-reasoning": {
+        "count": 20,
+        "hit_rate": 0.9,
+        "mrr": 0.8
+      }
+    }
+  },
+  "results": [
+    {
+      "question_id": "gpt4_2655b836",
+      "category": "temporal-reasoning",
+      "question": "What was the first issue I had with my new car after its first service?",
+      "expected": [
+        "GPS system not functioning correctly"
+      ],
+      "retrieved": [
+        "longeval_user had an issue with their car's GPS system not functioning correctly on March 22nd, 2023, and took it to the dealership where they replaced the entire system.",
+        "longeval_user had their car serviced on March 15th, 2023, and had a great experience with the service.",
+        "longeval_user is really happy with the new car cover, floor mats, and steering wheel cover purchased with credit card rewards.",
+        "longeval_user is happy with their new car accessories and is planning to get car wax and detailing done soon.",
+        "longeval_user used the $500 car accessories gift card to purchase a new car cover, floor mats, and a steering wheel cover."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_2487a7cb",
+      "category": "temporal-reasoning",
+      "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+      "expected": [
+        "'Data Analysis using Python' webinar"
+      ],
+      "retrieved": [
+        "longeval_user participated in a webinar on 'Data Analysis using Python' on March 28th, 2023, organized by an online learning platform, where the instructor shared resources on data visualization.",
+        "longeval_user attended a workshop on 'Effective Time Management' at the local community center on May 20th, 2023, and found it helpful.",
+        "longeval_user is actively attending various workshops and lectures to expand their knowledge.",
+        "longeval_user is interested in learning how to effectively communicate data insights to non-technical stakeholders.",
+        "longeval_user is interested in learning data visualization in Python."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_76048e76",
+      "category": "temporal-reasoning",
+      "question": "Which vehicle did I take care of first in February, the bike or the car?",
+      "expected": [
+        "bike"
+      ],
+      "retrieved": [
+        "longeval_user bought a silver Honda Civic on February 10th, 2023.",
+        "longeval_user had their bike repaired on February 15th, 2023 because the gears were acting up and they couldn't shift properly; the bike shop fixed it and it has been running smoothly since.",
+        "longeval_user plans to ask questions about car care when visiting a detailer.",
+        "longeval_user is considering taking their car to a local detailer with great reviews.",
+        "longeval_user enjoys casual bike riding and is interested in finding local bike trails."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "gpt4_2312f94c",
+      "category": "temporal-reasoning",
+      "question": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+      "expected": [
+        "Samsung Galaxy S22"
+      ],
+      "retrieved": [
+        "longeval_user pre-ordered a Dell XPS 13 laptop on January 28th, 2023, which arrived on February 25th, 2023, after a delay from the original expected arrival date of February 11th, 2023.",
+        "longeval_user purchased a new Samsung Galaxy S22 from the Best Buy store at the mall on February 20th, 2023, and is loving it so far.",
+        "longeval_user has had good experiences with Dell and HP computers in the past and is leaning towards these brands.",
+        "longeval_user is planning to bring the Anker PowerCore 20000 portable power bank on an upcoming trip to keep devices charged.",
+        "longeval_user prefers pre-built computers over building their own and is considering models from Dell and HP."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "0bb5a684",
+      "category": "temporal-reasoning",
+      "question": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?",
+      "expected": [
+        "7 days. 8 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user attended a workshop titled 'Effective Communication in the Workplace' on January 10th, 2023.",
+        "longeval_user has an upcoming team meeting on January 17th, 2023 and is preparing to practice active listening and conflict resolution skills.",
+        "Since attending the workshop on January 10th, 2023, longeval_user has been focusing on improving communication skills, including presenting information in a clear and concise manner.",
+        "longeval_user identifies self-awareness as a key takeaway from the communication workshop and is committed to developing this skill further.",
+        "longeval_user wants to improve their active listening and conflict resolution skills for effective team communication."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "08f4fc43",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+      "expected": [
+        "30 days. 31 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user attended Sunday mass at St. Mary's Church on March 19th, 2023, where Father John's sermon inspired them to give back to the community.",
+        "longeval_user attended an Ash Wednesday service at the cathedral on February 1st, 2023.",
+        "longeval_user was moved by Father John's sermon on forgiveness and compassion at St. Mary's Church on March 19th, 2023.",
+        "longeval_user attended Sunday mass at St. Mary's Church on January 2nd, 2023, and found the sermon on forgiveness deeply resonant.",
+        "longeval_user sat in the third pew from the front at St. Mary's Church next to their cousin Emma who was visiting from out of town."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "2c63a862",
+      "category": "temporal-reasoning",
+      "question": "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+      "expected": [
+        "14 days. 15 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user started working with Rachel, a real estate agent, on February 15th, 2022 to search for new construction listings.",
+        "longeval_user saw a house they really love on March 1st, 2022, and is considering making an offer on it.",
+        "longeval_user is working with a real estate agent named Rachel to find homes that fit their criteria.",
+        "longeval_user is working with an agent named Rachel on a home purchase.",
+        "longeval_user is working with a real estate agent named Rachel on a home purchase."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_385a5000",
+      "category": "temporal-reasoning",
+      "question": "Which seeds were started first, the tomatoes or the marigolds?",
+      "expected": [
+        "Tomatoes"
+      ],
+      "retrieved": [
+        "longeval_user has been starting seeds indoors under grow lights in their basement since February 20th, 2023, growing tomatoes, peppers, and cucumbers that are currently about 2-3 inches tall.",
+        "longeval_user started marigold seeds on March 3rd, 2023, and they are already germinating.",
+        "longeval_user is planning to plant seedlings in their backyard soon and is excited about growing marigolds.",
+        "longeval_user plans to transplant marigolds and other plants from seedlings.",
+        "longeval_user is planning to transplant seedlings, including marigolds, into larger pots soon."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "2a1811e2",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church?",
+      "expected": [
+        "21 days. 22 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user attended a Holi celebration at their local temple on February 26th, 2023, where they threw colors and learned about the festival's significance.",
+        "longeval_user attended Sunday mass at St. Mary's Church on March 19th, 2023, where Father John's sermon inspired them to give back to the community.",
+        "longeval_user is interested in traditional Indian sweets, particularly gujiyas and mathris served during Holi.",
+        "longeval_user was moved by Father John's sermon on forgiveness and compassion at St. Mary's Church on March 19th, 2023.",
+        "longeval_user is interested in learning about Hindu festivals, particularly their origins and cultural significance."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "bbf86515",
+      "category": "temporal-reasoning",
+      "question": "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?",
+      "expected": [
+        "4 days."
+      ],
+      "retrieved": [
+        "longeval_user participated in the 'Turbocharged Tuesdays' auto racing event at the local racing track on June 14th, 2023, and achieved a personal best time of 12.8 seconds in the quarter-mile drag race.",
+        "longeval_user attended Rack Fest in a nearby city on June 18th, 2023, and found it to be an amazing event.",
+        "longeval_user received a free can of NitroFuel's premium fuel additive at the Turbocharged Tuesdays event and is planning to use it for their next auto racing event.",
+        "longeval_user is planning to participate in a charity swim event and is new to both swim events and fundraising.",
+        "longeval_user attended the Rack Fest event on June 18th, 2023."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_5dcc0aab",
+      "category": "temporal-reasoning",
+      "question": "Which pair of shoes did I clean last month?",
+      "expected": [
+        "white Adidas sneakers"
+      ],
+      "retrieved": [
+        "longeval_user cleaned their white Adidas sneakers on April 30th, 2023, after they had been dirty and stained for weeks, particularly from an outdoor music festival attended on April 15th, 2023.",
+        "longeval_user owns white Adidas sneakers and cleaned them in April 2023 after they became dirty from the outdoor music festival.",
+        "longeval_user wore brown leather dress shoes to their cousin's wedding on May 9th, 2023, and they looked great.",
+        "longeval_user recently purchased a pet-safe cleaning product set from Amazon for around $20, which included a bowl cleaner, a brush, and a scrubber for cleaning Max's food and water bowls.",
+        "longeval_user is concerned about keeping Max's food and water bowls clean and germ-free."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_0b2f1d21",
+      "category": "temporal-reasoning",
+      "question": "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?",
+      "expected": [
+        "The malfunction of the stand mixer"
+      ],
+      "retrieved": [
+        "longeval_user purchased a black and stainless steel coffee maker from a well-known brand approximately three weeks ago (around May 1st, 2023) and has been using it every morning since then.",
+        "longeval_user had to take their stand mixer to a repair shop on April 22nd, 2023, and it took two weeks to fix, returning around May 6th, 2023.",
+        "longeval_user prefers baking recipes that don't require a stand mixer, in case their mixer breaks down again.",
+        "longeval_user is planning to make desserts for a dinner party and prefers recipes that don't require a stand mixer.",
+        "longeval_user had to bake by hand while their stand mixer was being repaired."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "f0853d11",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?",
+      "expected": [
+        "14 days. 8 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user participated in the Walk for Hunger 5K walk on February 21st, 2023.",
+        "longeval_user volunteered at the Coastal Cleanup event on March 7th, 2023.",
+        "longeval_user is interested in learning about charity events like Making Strides Against Breast Cancer and Walk for Hunger.",
+        "longeval_user is looking for new charity events to participate in, particularly ones that involve walking or running.",
+        "longeval_user likes the bake sale and walk/run event ideas, and is interested in adding a theme like 'Charity Chase' to make the walk/run event more appealing to participants."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_6ed717ea",
+      "category": "temporal-reasoning",
+      "question": "Which item did I purchase first, the dog bed for Max or the training pads for Luna?",
+      "expected": [
+        "Training pads for Luna"
+      ],
+      "retrieved": [
+        "longeval_user purchased an Orthopedic Memory Foam dog bed from Petco for Max on April 29th, 2023, and it has been helping with his arthritis.",
+        "longeval_user purchased eco-friendly training pads from Chewy.com for Luna's potty-training, buying a set of 10 for $25 on approximately April 20th, 2023.",
+        "longeval_user purchased an Orthopedic Memory Foam dog bed for Max from Petco on approximately May 27th, 2023 (about three weeks before May 20th, 2023), and it is helping with Max's arthritis.",
+        "longeval_user has a dog named Max who has arthritis.",
+        "longeval_user has a dog named Max who loves treats and is working on helping him lose weight."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "gpt4_70e84552",
+      "category": "temporal-reasoning",
+      "question": "Which task did I complete first, fixing the fence or trimming the goats' hooves?",
+      "expected": [
+        "Fixing the fence"
+      ],
+      "retrieved": [
+        "longeval_user fixed a broken fence on the east side of their property on May 1st, 2023, where their goats graze.",
+        "longeval_user last trimmed their farm animals' hooves on May 8th, 2023, and felt proud of doing a good job.",
+        "longeval_user successfully trimmed the goat's hooves on May 8th, 2023 with no mess.",
+        "longeval_user has goats and got them vaccinated against parasites on May 18th, 2023.",
+        "longeval_user is struggling with keeping track of tasks and projects."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "a3838d2b",
+      "category": "temporal-reasoning",
+      "question": "How many charity events did I participate in before the 'Run for the Cure' event?",
+      "expected": [
+        "4"
+      ],
+      "retrieved": [
+        "longeval_user participated in the 'Dance for a Cause' event on May 1st, 2023, where they danced for 6 hours to raise money for a local arts program.",
+        "longeval_user participated in the Walk for Hunger 5K walk on February 21st, 2023.",
+        "longeval_user attended the Rack Fest event on June 18th, 2023.",
+        "longeval_user is interested in participating in charity walks or runs that support cancer research or awareness.",
+        "longeval_user is interested in combining arts and fitness through charity events or volunteer opportunities."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_93159ced",
+      "category": "temporal-reasoning",
+      "question": "How long have I been working before I started my current job at NovaTech?",
+      "expected": [
+        "4 years and 9 months"
+      ],
+      "retrieved": [
+        "longeval_user has been working professionally for 9 years.",
+        "longeval_user has been working at NovaTech for approximately 4 years and 3 months as a backend developer.",
+        "longeval_user is currently working long hours on a high-priority project with an increased commute, leaving little time for personal life.",
+        "longeval_user works on a high-priority project at NovaTech.",
+        "longeval_user has been working at NovaTech for approximately 4 years and 3 months as of May 22, 2023."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "gpt4_2d58bcd6",
+      "category": "temporal-reasoning",
+      "question": "Which book did I finish reading first, 'The Hate U Give' or 'The Nightingale'?",
+      "expected": [
+        "'The Hate U Give'"
+      ],
+      "retrieved": [
+        "longeval_user finished reading \"The Hate U Give\" by Angie Thomas a few days before May 8th, 2023 for a book club meeting.",
+        "longeval_user finished reading three fiction novels on May 20th, 2023: \"The Seven Husbands of Evelyn Hugo\", \"The Silent Patient\", and \"The Nightingale\".",
+        "longeval_user is trying to read more diversely and is interested in book recommendations similar to \"The Hate U Give\".",
+        "longeval_user recently finished reading three fiction novels: 'The Seven Husbands of Evelyn Hugo' by Taylor Jenkins Reid, 'The Silent Patient' by Alex Michaelides, and 'The Nightingale' by Kristin Hannah, which was completed on May 21st, 2023.",
+        "longeval_user is trying to read more diversely and participates in a book club."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_65aabe59",
+      "category": "temporal-reasoning",
+      "question": "Which device did I set up first, the smart thermostat or the mesh network system?",
+      "expected": [
+        "Smart thermostat"
+      ],
+      "retrieved": [
+        "longeval_user set up a smart thermostat on April 24th, 2023, which learns their schedule and preferences, automatically adjusts temperature when they're away or sleeping, and has helped reduce their energy bills.",
+        "longeval_user recently upgraded their home Wi-Fi router to a new mesh network system, which has significantly improved their internet connection.",
+        "longeval_user recently upgraded to a mesh network system and wants their desktop to handle the internet connection well.",
+        "longeval_user set up a new smart thermostat to help reduce their energy bills.",
+        "longeval_user had an issue with their car's GPS system not functioning correctly on March 22nd, 2023, and took it to the dealership where they replaced the entire system."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "982b5123",
+      "category": "temporal-reasoning",
+      "question": "How many months ago did I book the Airbnb in San Francisco?",
+      "expected": [
+        "Five months ago"
+      ],
+      "retrieved": [
+        "longeval_user visited San Francisco on March 27th, 2023 for their best friend's wedding, staying for 5 days and had an amazing time.",
+        "longeval_user stayed in Haight-Ashbury, San Francisco via Airbnb for their best friend's wedding and had a great experience.",
+        "longeval_user is staying in Haight-Ashbury during an upcoming trip and plans to take BART followed by a short taxi ride to their Airbnb.",
+        "longeval_user prefers Airbnb for accommodations based on past positive experiences.",
+        "longeval_user is planning to attend the Racing Nationals drag racing event in August and has already booked a hotel room and reserved a spot in the event."
+      ],
+      "hit": false,
+      "rr": 0.0
+    }
+  ]
+}

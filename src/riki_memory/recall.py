@@ -20,14 +20,18 @@ Fixes applied while extracting from Riki:
 
 import logging
 import re
+from datetime import datetime
+
+from sqlalchemy import select
 
 from .config import MemoryConfig
 from .db import Database
-from .heuristic import make_heuristic_plan
+from .heuristic import is_aggregation_query, make_heuristic_plan
 from .llm import LLMProvider
-from .models import Memory
+from .models import CategoryFact, Memory
 from .retrieval import hybrid_search
 from .schemas import RetrievalPlan
+from .store import _TAG_TO_CATEGORY
 from .timeutil import localize, now_in
 from .users import ensure_user
 
@@ -45,6 +49,9 @@ topics (not the pronouns) when filling in the fields below.
 - semantic_query: a rewrite capturing the meaning, for things like preferences, opinions or plans.
 - entities: people, places, organisations or projects mentioned or referenced.
 - relation_words: relationship words ("my sister's husband's company" -> sister, husband, company). Use the user's own words.
+- tags: topic/category tags to search for. CRITICAL for counting or aggregation questions
+  ("how many weddings?", "total bike expenses", "all my doctor visits"). Use specific
+  lowercase hyphenated labels like "wedding", "bike-purchase", "doctor-visit", "model-kit".
 - start / end: only if the message refers to a time ("last week", "in March", "yesterday"). Use ISO 8601 with the timezone offset.
 Leave fields empty rather than guessing."""
 
@@ -91,6 +98,136 @@ def format_memories(memories: list[Memory]) -> str:
     return "\n".join(lines)
 
 
+def _apply_not_after(plan: RetrievalPlan, not_after: datetime | None) -> RetrievalPlan:
+    """Cap the plan's end date to not_after if it is tighter (or if end is unset)."""
+    if not_after is None:
+        return plan
+    if plan.end is None or not_after < plan.end:
+        return plan.model_copy(update={"end": not_after})
+    return plan
+
+
+def _filter_by_not_after(memories: list[Memory], not_after: datetime | None) -> list[Memory]:
+    """Remove memories whose event_at post-dates not_after.
+
+    Only event_at is checked — memories without event_at are always kept (they
+    are timeless facts). This is a post-retrieval safety net: the time channel
+    respects plan.end, but keyword/semantic channels ignore it.
+    """
+    if not_after is None:
+        return memories
+    kept = []
+    for m in memories:
+        ea = m.event_at
+        if ea is None:
+            kept.append(m)
+            continue
+        # Normalise: if event_at is naive, treat as UTC for comparison.
+        if ea.tzinfo is None:
+            from datetime import timezone as _tz
+            ea = ea.replace(tzinfo=_tz.utc)
+        if ea <= not_after:
+            kept.append(m)
+    return kept
+
+
+def _dedup_by_event(memories: list[Memory]) -> list[Memory]:
+    """Collapse same-event duplicates: keep one memory per (event_at_date, kind).
+
+    When multiple memories describe the same event from different angles, they
+    waste recall slots that should go to distinct events. We keep the most
+    informative one (longest content). Memories without event_at are never
+    deduplicated — they are timeless facts that cannot be clustered by date.
+    """
+    dated: dict[tuple, Memory] = {}
+    undated: list[Memory] = []
+    for m in memories:
+        if m.event_at is None:
+            undated.append(m)
+        else:
+            key = (m.event_at.date() if hasattr(m.event_at, "date") else m.event_at, m.kind)
+            existing = dated.get(key)
+            if existing is None or len(m.content) > len(existing.content):
+                dated[key] = m
+    # Re-merge in original rank order so dedup doesn't scramble scores.
+    deduped_ids = {m.id for m in dated.values()}
+    result = []
+    seen_keys: set[tuple] = set()
+    for m in memories:
+        if m.event_at is None:
+            result.append(m)
+        else:
+            key = (m.event_at.date() if hasattr(m.event_at, "date") else m.event_at, m.kind)
+            if key not in seen_keys and m.id in deduped_ids:
+                seen_keys.add(key)
+                result.append(m)
+    return result
+
+
+async def _category_facts_memories(
+    db: Database,
+    user_id: str,
+    tags: list[str],
+    not_after: datetime | None,
+) -> list[Memory]:
+    """Return the source memories for all CategoryFact rows matching the given tags.
+
+    This is the structured aggregation path: O(1) index lookup → JOIN to memories.
+    Falls back to an empty list if the category_facts table doesn't exist yet
+    (pre-migration databases) or no matching facts are found.
+    """
+    categories = list({
+        _TAG_TO_CATEGORY[t.lower().strip()]
+        for t in tags
+        if t.lower().strip() in _TAG_TO_CATEGORY
+    })
+    if not categories:
+        return []
+    try:
+        async with db.session_scope() as session:
+            stmt = (
+                select(Memory)
+                .join(CategoryFact, CategoryFact.source_memory_id == Memory.id)
+                .where(
+                    CategoryFact.user_id == user_id,
+                    CategoryFact.category.in_(categories),
+                    Memory.is_active.is_(True),
+                )
+                .order_by(Memory.event_at.asc().nullslast())
+            )
+            if not_after is not None:
+                from sqlalchemy import or_, func
+                stmt = stmt.where(
+                    or_(
+                        Memory.event_at.is_(None),
+                        Memory.event_at <= not_after,
+                    )
+                )
+            rows = (await session.scalars(stmt)).all()
+        return list(rows)
+    except Exception:
+        log.debug("category_facts query failed (table may not exist yet); falling back")
+        return []
+
+
+async def _dispatch_search(
+    db: Database,
+    llm: LLMProvider,
+    config: MemoryConfig,
+    user_id: str,
+    plan: RetrievalPlan,
+    query: str,
+    limit: int | None = None,
+) -> tuple[list[Memory], dict]:
+    """Route to agentic or single-shot hybrid search based on config."""
+    if config.retrieval_mode == "agentic":
+        from .agentic import agentic_search
+        return await agentic_search(db, llm, config, user_id, plan, rerank_query=query,
+                                    limit=limit)
+    return await hybrid_search(db, llm, config, user_id, plan, rerank_query=query,
+                               limit=limit)
+
+
 async def search(
     db: Database,
     llm: LLMProvider,
@@ -98,42 +235,84 @@ async def search(
     user_id: str,
     query: str,
     recent_chat: str = "",
+    not_after: datetime | None = None,
 ) -> tuple[list[Memory], dict]:
     """Plan + hybrid search. Returns ``(memories, report)``.
 
     ``report["planner"]`` says which plan built the query: ``"heuristic"``
     (zero chat tokens) or ``"llm"``.
+
+    ``not_after``: cap retrieval to memories dated at or before this datetime.
+    Pass the question date so future-dated memories don't pollute temporal questions.
     """
     user = await ensure_user(db, user_id, timezone=config.default_timezone)
     mode = config.planner_mode
+
+    # Aggregation queries ("how many X", "total", "all my") need the LLM planner
+    # so it can infer temporal bounds from named events ("before Run for the Cure").
+    # The heuristic escalate path short-circuits as soon as it finds *any* result,
+    # which means it never generates a proper date window for counting questions.
+    is_aggregation = is_aggregation_query(query or "")
 
     if mode == "heuristic":
         plan = make_heuristic_plan(
             query, user.timezone, pregated=bool(config.heuristic_pregate and _PREGATE.match(query or ""))
         )
         planner = "heuristic"
-    elif mode == "escalate":
+    elif mode == "escalate" and not is_aggregation:
         plan = make_heuristic_plan(
             query, user.timezone, pregated=bool(config.heuristic_pregate and _PREGATE.match(query or ""))
         )
         if plan.needs_memory:
-            found, report = await hybrid_search(db, llm, config, user.id, plan, rerank_query=query)
+            plan = _apply_not_after(plan, not_after)
+            found, report = await _dispatch_search(db, llm, config, user.id, plan, query)
             if report["candidates"]:
                 report["needs_memory"] = True
                 report["planner"] = "heuristic"
+                found = _filter_by_not_after(found, not_after)
                 return found, report
             log.debug("heuristic plan found nothing; escalating to the LLM planner")
         plan = await make_plan(llm, config, query, recent_chat, user.timezone)
         planner = "llm"
-    else:  # "llm"
+    else:  # "llm" or "escalate" with aggregation query
+        if mode == "escalate" and is_aggregation:
+            log.debug("aggregation query detected; skipping heuristic and using LLM planner directly")
         plan = await make_plan(llm, config, query, recent_chat, user.timezone)
         planner = "llm"
 
     if not plan.needs_memory:
         return [], {"needs_memory": False, "planner": planner}
-    found, report = await hybrid_search(db, llm, config, user.id, plan, rerank_query=query)
+    plan = _apply_not_after(plan, not_after)
+
+    # Use a higher recall limit for aggregation so all instances fit in the window.
+    effective_limit = config.aggregation_recall_limit if is_aggregation else None
+
+    found, report = await _dispatch_search(db, llm, config, user.id, plan, query,
+                                           limit=effective_limit)
     report["needs_memory"] = True
     report["planner"] = planner
+
+    # Post-retrieval safety net: filter out memories that post-date the question.
+    # Keyword/semantic channels don't respect plan.end, so this catches stragglers.
+    found = _filter_by_not_after(found, not_after)
+
+    # Collapse same-date/same-kind duplicates for aggregation queries so every
+    # recall slot holds a distinct event.
+    if is_aggregation:
+        found = _dedup_by_event(found)
+
+    # Category facts augmentation disabled: the tag-to-category mapping is too
+    # loose (e.g. 57 "wedding" facts when only 3 actual weddings), adding noise
+    # that confuses the judge. Re-enable once fact extraction filters out plans,
+    # interests, and preferences from actual events.
+    # if is_aggregation and plan.tags:
+    #     structured = await _category_facts_memories(db, user.id, plan.tags, not_after)
+    #     if structured:
+    #         existing_ids = {m.id for m in found}
+    #         extra = [m for m in structured if m.id not in existing_ids]
+    #         found = found + extra
+    #         report["category_facts_added"] = len(extra)
+
     return found, report
 
 

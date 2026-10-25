@@ -1,3 +1,6 @@
 data/
 .env
 eval.db
+riki-longeval.db
+longeval
+.json

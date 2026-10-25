@@ -44,6 +44,58 @@ _ENTITY_SKIP = frozenset(
     "was were do does did can could would should will shall may might must i we you".split()
 )
 
+_TEMPORAL_CALC_RE = re.compile(
+    r"\bhow (?:many|much|long)\s+(?:days?|months?|years?|hours?|minutes?|weeks?)\s+"
+    r"(?:before|after|since|ago|until|between|apart|did it take|does it take|will it take)",
+    re.IGNORECASE,
+)
+
+_AGGREGATION_RE = re.compile(
+    r"\b(how many|how much|total|all (?:the |my )?|every|each|count|sum)\b", re.IGNORECASE
+)
+
+
+def is_aggregation_query(text: str) -> bool:
+    """True for counting/summing queries, but NOT temporal math like 'how many days before X'."""
+    if not _AGGREGATION_RE.search(text):
+        return False
+    if _TEMPORAL_CALC_RE.search(text):
+        return False
+    return True
+
+
+def _tags(text: str) -> list[str]:
+    """Extract likely topic tags from the query — especially for aggregation questions."""
+    if not _AGGREGATION_RE.search(text):
+        return []
+    tags: list[str] = []
+    seen: set[str] = set()
+    for phrase in re.findall(r"""['"]([^'"]{2,40})['"]""", text):
+        tag = phrase.strip().lower().replace(" ", "-")
+        if tag and tag not in seen:
+            seen.add(tag)
+            tags.append(tag)
+    nouns = re.findall(
+        r"\b(wedding|trip|doctor|visit|purchase|expense|model.?kit|instrument|"
+        r"fish|tank|aquarium|game|class|festival|concert|book|movie|recipe|"
+        r"bak(?:e|ing)|cook(?:ing)?|bike|guitar|piano|drum|project|pet|"
+        r"charity|event|property|house|apartment|service|subscription|"
+        r"device|gadget|appliance|car|vehicle)\w*\b",
+        text.lower(),
+    )
+    for noun in nouns:
+        tag = noun.replace(" ", "-")
+        if tag not in seen:
+            seen.add(tag)
+            tags.append(tag)
+    for kw in _keywords(text):
+        tag = kw.lower().replace(" ", "-")
+        if len(tag) >= 3 and tag not in seen and tag not in STOPWORDS:
+            seen.add(tag)
+            tags.append(tag)
+    return tags[:MAX_TERMS]
+
+
 RELATION_WORDS = (
     "sister", "brother", "mother", "father", "wife", "husband", "partner",
     "girlfriend", "boyfriend", "son", "daughter", "uncle", "aunt", "cousin",
@@ -229,6 +281,7 @@ def make_heuristic_plan(
         semantic_query=message,
         entities=_entities(message),
         relation_words=_relation_words(message),
+        tags=_tags(message),
         start=start,
         end=end,
     )

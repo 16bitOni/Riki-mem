@@ -11,12 +11,31 @@ Paper:   "LongMemEval: Benchmarking Chat Assistants on Long-Term
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 from zoneinfo import ZoneInfo
+
+_AGGREGATION_JUDGE_RE = re.compile(
+    r"\b(how many|how much|total|average|sum|count|how long|how far|how old)\b",
+    re.IGNORECASE,
+)
+_TEMPORAL_CALC_JUDGE_RE = re.compile(
+    r"\bhow (?:many|much|long|far|old)\s+(?:days?|months?|years?|hours?|minutes?|weeks?)\s+"
+    r"(?:before|after|since|ago|until|between|apart|did it take|does it take|will it take)",
+    re.IGNORECASE,
+)
+
+
+def _is_aggregation_judge(question: str) -> bool:
+    if not _AGGREGATION_JUDGE_RE.search(question):
+        return False
+    if _TEMPORAL_CALC_JUDGE_RE.search(question):
+        return False
+    return True
 
 import httpx
 
@@ -91,7 +110,7 @@ def env_get(env: dict[str, str], key: str, default: str = "") -> str:
 # Provider + RikiMemory builder
 # ---------------------------------------------------------------------------
 
-def build_memory(env: dict[str, str]):
+def build_memory(env: dict[str, str], **config_overrides):
     from riki_memory import RikiMemory, OpenAICompatibleProvider, MemoryConfig
 
     api_key = env_get(env, "RIKI_API_KEY")
@@ -111,7 +130,7 @@ def build_memory(env: dict[str, str]):
 
     db_url = env_get(env, "RIKI_DB_URL", "sqlite+aiosqlite:///longeval/eval.db")
 
-    return RikiMemory(database_url=db_url, llm=llm, config=MemoryConfig())
+    return RikiMemory(database_url=db_url, llm=llm, config=MemoryConfig(**config_overrides))
 
 # ---------------------------------------------------------------------------
 # Dataset downloading
@@ -308,6 +327,7 @@ async def ingest_sessions(
     errors = 0
     t0 = time.time()
 
+    episodes_created = 0
     for sid, session in sessions.items():
         session_at = _parse_session_date(session.date)
         for i in range(0, len(session.turns) - 1, 2):
@@ -334,10 +354,22 @@ async def ingest_sessions(
             if progress_fn:
                 progress_fn(ingested + errors, total_pairs, sid)
 
+        try:
+            ep = await memory.close_session(
+                user_id=user_id,
+                session_key=f"longeval/{sid}",
+                date=session_at,
+            )
+            if ep:
+                episodes_created += 1
+        except Exception as e:
+            log.warning("close_session error session=%s: %s", sid, e)
+
     return {
         "ingested": ingested,
         "errors": errors,
         "sessions": len(sessions),
+        "episodes": episodes_created,
         "elapsed_s": round(time.time() - t0, 1),
     }
 
@@ -369,30 +401,66 @@ def score_substring(answers: list[str], retrieved: list[str]) -> tuple[bool, flo
 
 async def score_llm_judge(
     llm, question: str, expected: list[str], retrieved: list[str],
+    question_date: str = "",
 ) -> tuple[bool, float]:
     if not retrieved:
         return False, 0.0
 
-    context = "\n".join(f"- {m}" for m in retrieved[:10])
+    context = "\n".join(f"[{i+1}] {m}" for i, m in enumerate(retrieved[:30]))
     expected_str = " OR ".join(expected)
 
-    system = (
-        "You are an evaluation judge. Given a question, expected answer(s), "
-        "and retrieved memory context, determine if the context contains "
-        "enough information to correctly answer the question.\n"
-        "Reply with ONLY 'yes' or 'no'."
-    )
+    date_hint = (
+        f"The question was asked on {question_date}. "
+        "Use this as 'today' / 'now' for any relative time calculations "
+        "('X months ago', 'last week', etc.).\n"
+    ) if question_date else ""
+
+    is_aggregation = _is_aggregation_judge(question)
+
+    if is_aggregation:
+        system = (
+            "You are an evaluation judge for a personal memory system.\n"
+            f"{date_hint}"
+            "For counting / aggregation questions use this TWO-STEP process:\n\n"
+            "STEP 1 — DEDUPLICATE & EXTRACT\n"
+            "Read every numbered memory. List only the DISTINCT, SPECIFIC items relevant "
+            "to the question (one per line). Skip duplicates (same event mentioned multiple times), "
+            "preferences, plans, interests, and anything not directly answering the question.\n"
+            "Format each as: • <item name or description> [<value/amount if any>]\n\n"
+            "STEP 2 — COMPUTE & JUDGE\n"
+            "Count the distinct items / sum the values / do any date math needed.\n"
+            "Compare your answer to the expected answer (semantic equivalence is fine).\n\n"
+            "Reply in EXACTLY this format:\n"
+            "Items:\n"
+            "• <item 1>\n"
+            "• <item 2>\n"
+            "...\n"
+            "Answer: <your computed answer>\n"
+            "Match: yes OR Match: no"
+        )
+    else:
+        system = (
+            "You are an evaluation judge. Given a question and retrieved memory context:\n"
+            f"{date_hint}"
+            "1. Answer the question directly and concisely based ONLY on the retrieved context. "
+            "Do any counting, date math, or reasoning needed.\n"
+            "2. Compare your answer to the expected answer.\n"
+            "3. Determine if they are semantically equivalent.\n\n"
+            "Reply in EXACTLY this format:\n"
+            "Answer: <your direct concise answer>\n"
+            "Match: yes OR Match: no"
+        )
+
     user = (
         f"Question: {question}\n"
         f"Expected answer: {expected_str}\n\n"
-        f"Retrieved context:\n{context}\n\n"
-        f"Does the retrieved context contain the information needed to "
-        f"answer the question correctly?"
+        f"Retrieved memories:\n{context}\n\n"
+        f"Answer the question from the memories, then say whether it matches the expected answer."
     )
 
     try:
         reply = await llm.chat_text(system, user, fast=True)
-        hit = reply.strip().lower().startswith("yes")
+        hit = "match: yes" in reply.strip().lower()
         return hit, 1.0 if hit else 0.0
     except Exception as e:
         log.warning("LLM judge error, falling back to substring: %s", e)
@@ -412,19 +480,41 @@ async def run_questions(
     results: list[QuestionResult] = []
 
     for idx, q in enumerate(questions):
+        # Parse question_date into a datetime upper bound so retrieval excludes
+        # memories that post-date when the question was actually asked.
+        not_after: datetime | None = None
+        if q.question_date:
+            import re as _re
+            from datetime import timezone as _tz
+            # Dataset format: "2023/02/20 (Mon) 22:35" — strip the day-of-week token
+            # then try a few common formats.
+            clean = _re.sub(r"\s*\([A-Za-z]+\)\s*", " ", q.question_date).strip()
+            for fmt in ("%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    not_after = datetime.strptime(clean[:len(fmt) + 2], fmt).replace(tzinfo=_tz.utc)
+                    break
+                except ValueError:
+                    continue
+
         try:
-            found, _report = await memory.recall(user_id=user_id, query=q.question)
+            found, _report = await memory.recall(
+                user_id=user_id, query=q.question, not_after=not_after,
+            )
             retrieved = [m.content for m in found]
         except Exception as e:
             log.warning("recall error q=%s: %s", q.question_id, e)
             retrieved = []
 
         if judge == "llm":
-            hit, rr = await score_llm_judge(memory.llm, q.question, q.answers, retrieved)
+            hit, rr = await score_llm_judge(
+                memory.llm, q.question, q.answers, retrieved, question_date=q.question_date,
+            )
         elif judge == "combined":
             hit, rr = score_substring(q.answers, retrieved)
             if not hit:
-                hit, rr = await score_llm_judge(memory.llm, q.question, q.answers, retrieved)
+                hit, rr = await score_llm_judge(
+                    memory.llm, q.question, q.answers, retrieved, question_date=q.question_date,
+                )
         else:
             hit, rr = score_substring(q.answers, retrieved)
 

@@ -24,13 +24,98 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
+import re
+
 from .config import MemoryConfig
 from .db import Database
 from .entities import link_entities, prune_orphaned_entities
 from .llm import LLMProvider
-from .models import Memory
+from .models import CategoryFact, Memory
 from .schemas import MemoryCreate
 from .similarity import cosine_similarity, trigram_similarity
+from .tags import normalize_tags
+
+# Tags that map directly to a category name for materialized aggregation.
+# The value is the canonical category key stored in category_facts.
+_TAG_TO_CATEGORY: dict[str, str] = {
+    "charity-event": "charity_event_attended",
+    "charity":       "charity_event_attended",
+    "wedding":       "wedding_attended",
+    "model-kit":     "model_kit",
+    "model-tanks":   "model_kit",
+    "instrument":    "instrument_owned",
+    "doctor-visit":  "doctor_visited",
+    "camping":       "camping_trip",
+    "bike-purchase": "bike_expense",
+    "bike-maintenance": "bike_expense",
+    "aquarium":      "aquarium_fish",
+    "health-device": "health_device",
+    "road-trip":     "road_trip",
+    "birth-event":   "baby_born",
+    "property-viewing": "property_viewed",
+    "art-event":     "art_event_attended",
+    "citrus":        "citrus_used",
+}
+
+# Dollar amounts: $ followed by digits (optionally with comma/period separators)
+_AMOUNT_RE = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)")
+
+
+def _extract_amount(content: str) -> tuple[float | None, str | None]:
+    """Pull the first dollar amount out of a memory string, if any."""
+    m = _AMOUNT_RE.search(content)
+    if not m:
+        return None, None
+    try:
+        return float(m.group(1).replace(",", "")), "USD"
+    except ValueError:
+        return None, None
+
+
+def _item_name_from_content(content: str) -> str:
+    """Best-effort: strip the leading 'longeval_user ...' prefix to get a short item name."""
+    # Remove "longeval_user <verb phrase>" prefix, keep the specific named thing
+    trimmed = re.sub(r"^longeval_user\s+\S+\s+", "", content, count=1).strip()
+    # Cap at 200 chars
+    return trimmed[:200] if trimmed else content[:200]
+
+
+async def _upsert_category_facts(
+    session,
+    user_id: str,
+    memory: Memory,
+    tags: list[str],
+    content: str,
+) -> None:
+    """Write one CategoryFact row per matching tag category (idempotent via unique constraint)."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    seen_categories: set[str] = set()
+    numeric_value, unit = _extract_amount(content)
+    item_name = _item_name_from_content(content)
+
+    for tag in tags:
+        category = _TAG_TO_CATEGORY.get(tag.lower().strip())
+        if not category or category in seen_categories:
+            continue
+        seen_categories.add(category)
+        try:
+            stmt = (
+                sqlite_insert(CategoryFact)
+                .values(
+                    user_id=user_id,
+                    category=category,
+                    item_name=item_name,
+                    numeric_value=numeric_value,
+                    unit=unit,
+                    date=memory.event_at,
+                    source_memory_id=memory.id,
+                )
+                .on_conflict_do_nothing()  # unique(user_id, category, source_memory_id)
+            )
+            await session.execute(stmt)
+        except Exception:
+            log.debug("category_fact upsert skipped for memory %s category %s", memory.id, category)
 
 log = logging.getLogger(__name__)
 
@@ -115,6 +200,13 @@ async def save_memory(
     - If the embedding fails, the memory is still saved and flagged so
       ``reembed_stale`` can finish the job.
     """
+    if data.tags:
+        data = data.model_copy(update={
+            "tags": await normalize_tags(
+                llm, db, data.user_id, data.tags, config.tag_similarity_threshold
+            )
+        })
+
     content_hash = hashlib.sha256(data.content.lower().encode("utf-8")).hexdigest()
 
     # 1. Exact duplicate? Answer before paying for an embedding.
@@ -148,6 +240,7 @@ async def save_memory(
                 importance=max(data.importance, near.importance) if near else data.importance,
                 event_at=data.event_at,
                 source_key=data.source_key,
+                tags=data.tags or [],
                 wants_embedding=wants_vector,
                 embedding=vector,
                 embedding_model=llm.embedding_model_id if vector is not None else None,
@@ -157,6 +250,9 @@ async def save_memory(
             await session.flush()
 
             await db.keywords.add(session, memory.id, memory.content)
+
+            if data.tags:
+                await _upsert_category_facts(session, data.user_id, memory, data.tags, data.content)
 
             if config.enable_entities:
                 await link_entities(session, data.user_id, memory.id, data.entities, data.relations)

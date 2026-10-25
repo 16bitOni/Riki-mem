@@ -1,0 +1,1723 @@
+{
+  "report": {
+    "overall": {
+      "count": 100,
+      "hit_rate": 0.55,
+      "mrr": 0.439
+    },
+    "by_category": {
+      "multi-session": {
+        "count": 40,
+        "hit_rate": 0.475,
+        "mrr": 0.301
+      },
+      "temporal-reasoning": {
+        "count": 60,
+        "hit_rate": 0.6,
+        "mrr": 0.53
+      }
+    }
+  },
+  "results": [
+    {
+      "question_id": "gpt4_2655b836",
+      "category": "temporal-reasoning",
+      "question": "What was the first issue I had with my new car after its first service?",
+      "expected": [
+        "GPS system not functioning correctly"
+      ],
+      "retrieved": [
+        "longeval_user had an issue with their car's GPS system on March 22nd, 2023, and had to take it back to the dealership to get it fixed.",
+        "longeval_user had their car serviced for the first time on March 15th, 2023, and it was a great experience.",
+        "longeval_user was frustrated by the GPS issue, but it was resolved quickly.",
+        "longeval_user prefers new car accessories and is happy with them.",
+        "longeval_user prefers getting a car wax and detailing done before their trip to protect their car's paint job and interior."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_2487a7cb",
+      "category": "temporal-reasoning",
+      "question": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+      "expected": [
+        "'Data Analysis using Python' webinar"
+      ],
+      "retrieved": [
+        "longeval_user participated in a webinar on 'Data Analysis using Python' two months ago, which was organized by an online learning platform, and the instructor shared some great resources on data visualization.",
+        "longeval_user attended a workshop on 'Effective Communication in the Workplace' on January 10th, which was really helpful in improving active listening and conflict resolution skills.",
+        "longeval_user attended a workshop on 'Effective Communication in the Workplace' on January 10th, 2023",
+        "longeval_user recognizes the importance of self-awareness in effective communication after attending a workshop on 'Effective Communication in the Workplace' on January 10th, 2023.",
+        "longeval_user attended the workshop on 'Effective Communication in the Workplace' on January 10th, which helped them realize the importance of active listening in team meetings."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_76048e76",
+      "category": "temporal-reasoning",
+      "question": "Which vehicle did I take care of first in February, the bike or the car?",
+      "expected": [
+        "bike"
+      ],
+      "retrieved": [
+        "longeval_user's bike was repaired in mid-February.",
+        "longeval_user bought a new silver Honda Civic on February 10th, 2023.",
+        "In mid-February 2023, longeval_user took their bike in for repairs because the gears were acting up and they couldn't shift properly.",
+        "longeval_user had their car serviced for the first time on March 15th, 2023, and it was a great experience.",
+        "longeval_user is thinking of getting a new bike rack for their car."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_2312f94c",
+      "category": "temporal-reasoning",
+      "question": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+      "expected": [
+        "Samsung Galaxy S22"
+      ],
+      "retrieved": [
+        "longeval_user recently got a new Samsung Galaxy S22 from the Best Buy store at the mall on February 20th",
+        "longeval_user owns a Dell XPS 13 laptop that arrived on February 25th, 2023.",
+        "longeval_user has had good experiences with Dell and HP desktop computers in the past.",
+        "longeval_user is exploring different options between AIO desktops and Traditional desktops, considering brands like Dell, HP, Lenovo, Apple, and Asus.",
+        "longeval_user has been looking at pre-built computer models from Dell and HP."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "0bb5a684",
+      "category": "temporal-reasoning",
+      "question": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?",
+      "expected": [
+        "7 days. 8 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user attended a workshop on 'Effective Communication in the Workplace' on January 10th, 2023",
+        "longeval_user prefers to practice skills in an upcoming team meeting on January 17th.",
+        "longeval_user prefers to practice active listening and conflict resolution skills for an upcoming team meeting on January 17th",
+        "longeval_user attended a workshop on 'Effective Communication in the Workplace' on January 10th, which was really helpful in improving active listening and conflict resolution skills.",
+        "longeval_user attended the workshop on 'Effective Communication in the Workplace' on January 10th, which helped them realize the importance of active listening in team meetings."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "08f4fc43",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+      "expected": [
+        "30 days. 31 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user attended Sunday mass at St. Mary's Church on January 2nd, 2023, and found the sermon on forgiveness deeply resonant.",
+        "longeval_user attended an Ash Wednesday service at the cathedral on February 1st, 2023, which inspired them to reflect on the importance of giving back to the community.",
+        "longeval_user attended the Ash Wednesday service at the cathedral on February 1st, which inspired them to suggest a food drive to their Bible study group to support a local soup kitchen.",
+        "longeval_user was moved by Father John's sermon on forgiveness and compassion at St. Mary's Church last Sunday.",
+        "longeval_user was inspired by Father John's sermon at St. Mary's Church on March 19th to give back to the community."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "2c63a862",
+      "category": "temporal-reasoning",
+      "question": "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+      "expected": [
+        "14 days. 15 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user saw a house they really love on March 1st, 2022 and is considering making an offer on it.",
+        "longeval_user is working with a real estate agent named Rachel.",
+        "longeval_user is working with a real estate agent named Rachel to find homes.",
+        "Rachel has been helping longeval_user with their search for a family-friendly neighborhood.",
+        "longeval_user trusts their real estate agent's judgment and finds her recommendations helpful throughout the process."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_385a5000",
+      "category": "temporal-reasoning",
+      "question": "Which seeds were started first, the tomatoes or the marigolds?",
+      "expected": [
+        "Tomatoes"
+      ],
+      "retrieved": [
+        "longeval_user has been starting seeds indoors under grow lights in the basement since February 20th - tomatoes, peppers, and cucumbers are all doing well, about 2-3 inches tall now.",
+        "longeval_user started some marigold seeds that arrived on March 3rd, and they're already germinating - excited to see them grow!",
+        "longeval_user prefers transplanting seedlings, including marigolds, into larger pots soon with care to avoid shocking them.",
+        "longeval_user prefers DIY trellises or stakes for supporting marigolds.",
+        "longeval_user prefers a hybrid approach combining individual stem ties and a twine grid for supporting marigolds."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "2a1811e2",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church?",
+      "expected": [
+        "21 days. 22 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user mentioned attending the Hindu festival of Holi at the local temple on February 26th.",
+        "longeval_user was inspired by Father John's sermon at St. Mary's Church on March 19th to give back to the community.",
+        "longeval_user attended Sunday mass at St. Mary's Church on January 2nd, 2023, and found the sermon on forgiveness deeply resonant.",
+        "longeval_user was moved by Father John's sermon on forgiveness and compassion at St. Mary's Church last Sunday.",
+        "longeval_user experienced the significance of colors in Holi with Rohan and his family."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "bbf86515",
+      "category": "temporal-reasoning",
+      "question": "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?",
+      "expected": [
+        "4 days."
+      ],
+      "retrieved": [
+        "longeval_user participated in the 'Turbocharged Tuesdays' auto racking event at the local racing track on June 14th, achieving a personal best time of 12.8 seconds in the quarter-mile drag race.",
+        "longeval_user attended the Rack Fest event last weekend on June 18th.",
+        "longeval_user drove their car at the 'Turbocharged Tuesdays' event on June 14th, where they achieved a personal best time of 12.8 seconds in the quarter-mile drag race.",
+        "longeval_user received a free can of NitroFuel's premium fuel additive at the 'Turbocharged Tuesdays' event, which they plan to use for their next event.",
+        "longeval_user participated in the 'Bike-a-Thon' charity event on November 1st, 2023."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_5dcc0aab",
+      "category": "temporal-reasoning",
+      "question": "Which pair of shoes did I clean last month?",
+      "expected": [
+        "white Adidas sneakers"
+      ],
+      "retrieved": [
+        "longeval_user cleaned their white Adidas sneakers last month.",
+        "longeval_user cleaned their white Adidas sneakers last month, which they had been meaning to do for weeks.",
+        "longeval_user prefers to maintain their brown leather dress shoes by cleaning, conditioning, and polishing them regularly.",
+        "longeval_user wore their trusty old Converse Chuck Taylor All Star sneakers to an outdoor music festival last month.",
+        "longeval_user prefers to clean their shoes with a mixture of soap and water and air dry them on the balcony."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_0b2f1d21",
+      "category": "temporal-reasoning",
+      "question": "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?",
+      "expected": [
+        "The malfunction of the stand mixer"
+      ],
+      "retrieved": [
+        "longeval_user's stand mixer broke down and was repaired on April 22nd, 2023.",
+        "longeval_user purchased a black and stainless steel coffee maker from a well-known brand three weeks ago.",
+        "longeval_user's stand mixer took two weeks to repair at a repair shop in April 2023, during which time longeval_user had to bake several items by hand.",
+        "longeval_user prefers to use their coffee maker for making desserts for dinner parties.",
+        "longeval_user prefers to maintain kitchen appliances to prevent malfunctions and ensure smooth dinner party preparations."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "f0853d11",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?",
+      "expected": [
+        "14 days. 8 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user participated in the 'Walk for Hunger' 5K walk on February 21st, 2023.",
+        "longeval_user volunteered at the Coastal Cleanup event on March 7th, 2023.",
+        "longeval_user prefers a theme for the walk/run event like 'Charity Chase' to make it more appealing to participants.",
+        "longeval_user volunteered at the Coastal Cleanup event on March 7th, learning about the harmful effects of oxybenzone and octinoxate on coral reefs.",
+        "longeval_user volunteered at the Coastal Cleanup event on March 7th and is interested in projects that focus on marine debris and its impact on coral reefs."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_6ed717ea",
+      "category": "temporal-reasoning",
+      "question": "Which item did I purchase first, the dog bed for Max or the training pads for Luna?",
+      "expected": [
+        "Training pads for Luna"
+      ],
+      "retrieved": [
+        "longeval_user prefers eco-friendly training pads for their puppy, Luna, and recently bought a set of 10 from Chewy.com.",
+        "longeval_user purchased an Orthopedic Memory Foam dog bed for Max from Petco approximately three weeks ago (around May 1st, 2023), and it is helping with his arthritis.",
+        "longeval_user got Max an Orthopedic Memory Foam dog bed from Petco on April 29th, 2023, and it has been helping with his arthritis.",
+        "longeval_user prefers dental chews and toys for Luna's oral health.",
+        "longeval_user is considering switching Max to a grain-free, high-protein dog food."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_70e84552",
+      "category": "temporal-reasoning",
+      "question": "Which task did I complete first, fixing the fence or trimming the goats' hooves?",
+      "expected": [
+        "Fixing the fence"
+      ],
+      "retrieved": [
+        "longeval_user fixed a broken fence on the east side of their property on May 1st, 2023, where their goats like to graze.",
+        "longeval_user successfully trimmed the goat's hooves on May 8th, 2023 with no mess.",
+        "longeval_user got their goats vaccinated against parasites last Thursday.",
+        "longeval_user's goats were vaccinated against parasites last Thursday.",
+        "longeval_user owns goats and is responsible for their hoof trimming maintenance."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "a3838d2b",
+      "category": "temporal-reasoning",
+      "question": "How many charity events did I participate in before the 'Run for the Cure' event?",
+      "expected": [
+        "4"
+      ],
+      "retrieved": [
+        "longeval_user participated in the 'Walk for Hunger' 5K walk on February 21st, 2023.",
+        "longeval_user participated in a Bike-a-Thon for Cancer Research and raised $5,000 on April 28th, 2023.",
+        "longeval_user participated in a charity 5K run for a local children's hospital on April 20th, 2023.",
+        "longeval_user participated in the 'Bike-a-Thon' charity event on November 1st, 2023.",
+        "longeval_user is interested in participating in the Making Strides Against Breast Cancer event."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_93159ced",
+      "category": "temporal-reasoning",
+      "question": "How long have I been working before I started my current job at NovaTech?",
+      "expected": [
+        "4 years and 9 months"
+      ],
+      "retrieved": [
+        "longeval_user has been working professionally for 9 years and currently uses a physical notebook to track tasks and reminders.",
+        "longeval_user has been working at NovaTech for approximately 4 years and 3 months.",
+        "longeval_user has been working at NovaTech for about 4 years and 3 months.",
+        "longeval_user works on a high-priority project at NovaTech.",
+        "longeval_user is currently working long hours on a high-priority project with an increased commute, leaving little time for personal life."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "gpt4_2d58bcd6",
+      "category": "temporal-reasoning",
+      "question": "Which book did I finish reading first, 'The Hate U Give' or 'The Nightingale'?",
+      "expected": [
+        "'The Hate U Give'"
+      ],
+      "retrieved": [
+        "longeval_user finished 'The Hate U Give' by Angie Thomas a few days before the book club meeting on May 8th, 2023.",
+        "longeval_user finished reading three fiction novels on the weekend of May 20-21, 2023: 'The Seven Husbands of Evelyn Hugo', 'The Silent Patient', and 'The Nightingale'.",
+        "longeval_user prefers historical fiction books with a similar tone and style to 'The Nightingale'",
+        "longeval_user prefers historical fiction books similar to 'The Nightingale' and 'All the Light We Cannot See'.",
+        "longeval_user prefers books similar to 'The Seven Husbands of Evelyn Hugo', 'The Silent Patient', and 'The Nightingale'"
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_65aabe59",
+      "category": "temporal-reasoning",
+      "question": "Which device did I set up first, the smart thermostat or the mesh network system?",
+      "expected": [
+        "Smart thermostat"
+      ],
+      "retrieved": [
+        "longeval_user is with XYZ Internet and has a 500 Mbps plan. They recently got a new router on January 15th, which has improved their Wi-Fi signal strength significantly. They need to figure out how to set up the guest network feature. They have around 5-6 devices connected, including their laptop, smart TV, and smart speaker. They usually work from their home office, which is about 10-15 feet away from the router. They have an Ethernet cable if needed.",
+        "longeval_user set up their smart thermostat on February 10th, 2023, after procrastinating for weeks, and it has been a game-changer.",
+        "longeval_user upgraded their home Wi-Fi router on May 3rd, 2023, which significantly improved the coverage and speed of their internet connection throughout the house.",
+        "longeval_user prefers a desktop within the budget of $800 to $1,200 that can handle their upgraded mesh network system.",
+        "longeval_user needs to figure out how to set up the guest network feature on the new router."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "982b5123",
+      "category": "temporal-reasoning",
+      "question": "How many months ago did I book the Airbnb in San Francisco?",
+      "expected": [
+        "Five months ago"
+      ],
+      "retrieved": [
+        "longeval_user has had a great experience with Airbnb in the past and stayed in Haight-Ashbury for their best friend's wedding, booking three months in advance.",
+        "longeval_user stayed in Haight-Ashbury via Airbnb for their best friend's wedding and had to book three months in advance.",
+        "longeval_user visited San Francisco on March 25, 2023 for their best friend's wedding, staying for 5 days and had an amazing time.",
+        "longeval_user's best friend got married in San Francisco on March 26, 2023, and longeval_user attended a 5-day trip for the wedding.",
+        "longeval_user is planning a trip to San Francisco and is looking for Airbnb neighborhoods to stay in."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "b9cfe692",
+      "category": "temporal-reasoning",
+      "question": "How long did I take to finish 'The Seven Husbands of Evelyn Hugo' and 'The Nightingale' combined?",
+      "expected": [
+        "5.5 weeks"
+      ],
+      "retrieved": [
+        "longeval_user finished reading three fiction novels on the weekend of May 20-21, 2023: 'The Seven Husbands of Evelyn Hugo', 'The Silent Patient', and 'The Nightingale'.",
+        "longeval_user prefers historical fiction books with a similar tone and style to 'The Nightingale'",
+        "longeval_user prefers the book 'The Seven Husbands of Evelyn Hugo' by Taylor Jenkins Reid for the next read in their book club.",
+        "longeval_user prefers historical fiction books similar to 'The Nightingale' and 'All the Light We Cannot See'.",
+        "longeval_user prefers books similar to 'The Seven Husbands of Evelyn Hugo', 'The Silent Patient', and 'The Nightingale'"
+      ],
+      "hit": true,
+      "rr": 0.14285714285714285
+    },
+    {
+      "question_id": "gpt4_4edbafa2",
+      "category": "temporal-reasoning",
+      "question": "What was the date on which I attended the first BBQ event in June?",
+      "expected": [
+        "June 3rd"
+      ],
+      "retrieved": [
+        "longeval_user attended a backyard BBQ party on June 3rd, 2023, where they tasted various BBQ sauces.",
+        "longeval_user prefers to restock Sweet Baby Ray's BBQ sauce after using it up on June 17th, 2023.",
+        "longeval_user is planning to host a BBQ party soon.",
+        "longeval_user prefers to experiment with different BBQ recipes at home.",
+        "longeval_user attended the Rack Fest event last weekend on June 18th."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "c8090214",
+      "category": "temporal-reasoning",
+      "question": "How many days before I bought the iPhone 13 Pro did I attend the Holiday Market?",
+      "expected": [
+        "7 days. 8 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user purchased an iPhone 13 Pro at a discounted price of $800 from Best Buy on Black Friday.",
+        "longeval_user attended the annual Holiday Market at the local mall on November 24th, 2023 (a week before Black Friday) and saw unique handmade jewelry there.",
+        "longeval_user attended the annual Holiday Market at the local mall on November 18th, 2023 (a week before Black Friday) and saw unique handmade jewelry there.",
+        "longeval_user attended the annual Holiday Market at the local mall on November 24th, 2023, about a week before Black Friday, and saw unique handmade jewelry there.",
+        "longeval_user attended the annual Holiday Market at the local mall on November 18th, 2023 (a week before Black Friday on November 24th, 2023), and saw unique handmade jewelry there that might be suitable as a gift for their sister."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_483dd43c",
+      "category": "temporal-reasoning",
+      "question": "Which show did I start watching first, 'The Crown' or 'Game of Thrones'?",
+      "expected": [
+        "'Game of Thrones'"
+      ],
+      "retrieved": [
+        "longeval_user started watching Game of Thrones on HBO Max on April 20th, 2023 and has completed the first four seasons.",
+        "longeval_user finished binge-watching the third season of 'The Crown' on Netflix, starting on a Sunday afternoon on May 14th, 2023 and completing it in 14 days by May 28th, 2023, watching 2-3 episodes every day.",
+        "longeval_user prefers shows similar to 'The Crown'",
+        "longeval_user prefers watching 'Game of Thrones' on HBO Max.",
+        "longeval_user prefers fantasy shows similar to 'Game of Thrones'"
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "e4e14d04",
+      "category": "temporal-reasoning",
+      "question": "How long had I been a member of 'Book Lovers Unite' when I attended the meetup?",
+      "expected": [
+        "Two weeks"
+      ],
+      "retrieved": [
+        "longeval_user recently joined a Facebook group called 'Book Lovers Unite' three weeks ago and has been enjoying the discussions and recommendations from the members.",
+        "longeval_user attended a meetup organized by Book Lovers Unite on May 17th, 2023 where they discussed a John Grisham book and found it so much fun debating the plot twists and characters with fellow book lovers.",
+        "longeval_user prefers to guide the conversation in 'Book Lovers Unite' with discussion questions and encourages members to share their thoughts and opinions.",
+        "longeval_user is considering setting specific topics or themes (such as the portrayal of marriage or the impact of social media) for 'Book Lovers Unite' discussions to help focus the conversation.",
+        "longeval_user joined a new book club group called 'Page Turners' last week."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "c9f37c46",
+      "category": "temporal-reasoning",
+      "question": "How long had I been watching stand-up comedy specials regularly when I attended the open mic night at the local comedy club?",
+      "expected": [
+        "2 months"
+      ],
+      "retrieved": [
+        "longeval_user started watching stand-up comedy regularly about 3 months ago (around late February 2023) after watching a John Mulaney Netflix special.",
+        "longeval_user recently got into stand-up comedy and attended an open mic night at a local comedy club on April 27th, 2023.",
+        "longeval_user prefers to attend open mics before taking a comedy class to get a feel for the local comedy scene and experiment with material.",
+        "longeval_user prefers to develop their own unique voice in stand-up comedy.",
+        "longeval_user prefers to strike a balance between trying out new material and refining existing jokes for open mics."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_2c50253f",
+      "category": "temporal-reasoning",
+      "question": "What time do I wake up on Tuesdays and Thursdays?",
+      "expected": [
+        "6:45 AM"
+      ],
+      "retrieved": [
+        "longeval_user recently started waking up at 7:00 AM, which is earlier than their usual 8:30 AM wake-up time.",
+        "longeval_user prefers to adjust their wake-up time to fit in a short and enjoyable morning workout.",
+        "longeval_user prefers waking up earlier on weekdays to fit in a quick 15-20 minute morning workout",
+        "longeval_user is trying to create a personalized morning routine that includes a 30-minute walk, meditation, and yoga on Tuesdays and Thursdays.",
+        "longeval_user prefers scheduling yoga practice for Monday, Wednesday, and Friday mornings at 7:00 am"
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "dcfa8644",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed since I bought my Adidas running shoes when I realized one of the shoelaces on my old Converse sneakers had broken?",
+      "expected": [
+        "14 days. 15 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user recently acquired a new pair of Adidas running shoes on January 10th, 2023.",
+        "longeval_user's old Converse sneakers had a broken shoelace on January 24th, 2023 that they had to replace.",
+        "longeval_user prefers wearing black and white Vans Old Skool sneakers almost every day since buying them on a whim last weekend.",
+        "longeval_user wore their trusty old Converse Chuck Taylor All Star sneakers to an outdoor music festival last month.",
+        "longeval_user prefers hiking boots over Converse sneakers for breathability and moisture management."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_b4a80587",
+      "category": "temporal-reasoning",
+      "question": "Which event happened first, the road trip to the coast or the arrival of the new prime lens?",
+      "expected": [
+        "The arrival of the new prime lens"
+      ],
+      "retrieved": [
+        "longeval_user took a coastal trip and used their prime lens to photograph portraits of friends.",
+        "longeval_user recently acquired a new 50mm f/1.8 prime lens and is still getting used to it.",
+        "longeval_user prefers using a prime lens for better image quality compared to a kit lens.",
+        "longeval_user prefers to bring the 50mm prime lens for the hike as it has been their favorite lens recently.",
+        "longeval_user mentioned that a new remote shutter release arrived on February 10th, and it has been a game-changer."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_9a159967",
+      "category": "temporal-reasoning",
+      "question": "Which airline did I fly with the most in March and April?",
+      "expected": [
+        "United Airlines"
+      ],
+      "retrieved": [
+        "longeval_user took a business trip to Chicago with United Airlines in March, flying from their hometown to Chicago on the 10th and returning on the 12th.",
+        "longeval_user took a direct flight with Southwest Airlines from their hometown to Las Vegas from March 15th to March 18th, 2023 for a conference.",
+        "longeval_user took a week-long vacation to Hawaii with family from April 20th to April 27th, 2023, flying American Airlines from their hometown to Honolulu with a connecting flight to Maui.",
+        "longeval_user is considering flying to Las Vegas soon.",
+        "longeval_user's hometown airport is a Southwest Airlines hub, and they are hoping to get a good deal on the flight to SFO, considering their loyalty to United Airlines and American Airlines."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "cc6d1ec1",
+      "category": "temporal-reasoning",
+      "question": "How long had I been bird watching when I attended the bird watching workshop?",
+      "expected": [
+        "Two months"
+      ],
+      "retrieved": [
+        "longeval_user is getting into bird watching for about three months now and finds it fascinating.",
+        "longeval_user attended a bird watching workshop at the local Audubon society a month ago.",
+        "longeval_user prefers developing a better understanding of bird anatomy to improve bird identification.",
+        "longeval_user prefers to learn more about bird calls and is listening to recordings on their phone to identify birds by ear",
+        "longeval_user prefers to organize birding journal entries with date, location, bird species, descriptions, sketches, photos, habitat notes, and identification challenges for effective bird identification."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_8c8961ae",
+      "category": "temporal-reasoning",
+      "question": "Which trip did I take first, the one to Europe with family or the solo trip to Thailand?",
+      "expected": [
+        "The solo trip to Thailand"
+      ],
+      "retrieved": [
+        "longeval_user traveled solo to Thailand last year and had complete freedom to do whatever they wanted.",
+        "longeval_user went on a two-week trip to Europe with their parents and younger brother on April 23, 2023.",
+        "longeval_user took a solo trip to Europe last summer where they spent two weeks backpacking through Italy, Switzerland, and Germany.",
+        "longeval_user is planning a trip to Europe next summer to visit relatives in Germany, France, and the UK.",
+        "longeval_user is planning a trip to Europe next summer to visit relatives."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_d9af6064",
+      "category": "temporal-reasoning",
+      "question": "Which device did I set up first, the smart thermostat or the new router?",
+      "expected": [
+        "new router"
+      ],
+      "retrieved": [
+        "longeval_user is with XYZ Internet and has a 500 Mbps plan. They recently got a new router on January 15th, which has improved their Wi-Fi signal strength significantly. They need to figure out how to set up the guest network feature. They have around 5-6 devices connected, including their laptop, smart TV, and smart speaker. They usually work from their home office, which is about 10-15 feet away from the router. They have an Ethernet cable if needed.",
+        "longeval_user received a new router on January 15th, 2023, which has improved their Wi-Fi signal strength significantly.",
+        "longeval_user set up their smart thermostat on February 10th, 2023, after procrastinating for weeks, and it has been a game-changer.",
+        "longeval_user set up a smart thermostat on April 24th, 2023, and it has been learning their schedule and preferences, automatically adjusting temperature when they're not home or sleeping, which has helped reduce their energy bills.",
+        "longeval_user needs to figure out how to set up the guest network feature on the new router."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_7de946e7",
+      "category": "temporal-reasoning",
+      "question": "Which health issue did I deal with first, the persistent cough or the skin tag removal?",
+      "expected": [
+        "Persistent cough"
+      ],
+      "retrieved": [
+        "longeval_user has been dealing with a persistent cough for the past three weeks and visited their primary care physician, Dr. Smith, on February 10th, 2023.",
+        "longeval_user had a minor surgical procedure to remove a skin tag on their neck on February 22nd, and it has healed up now.",
+        "longeval_user has been dealing with a lingering cough for six weeks and was diagnosed with bronchitis by Dr. Smith on March 3rd, 2023.",
+        "longeval_user had a skin tag removed from their neck recently.",
+        "longeval_user prefers getting a chest x-ray to rule out any other issues related to their persistent cough."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "d01c6aa8",
+      "category": "temporal-reasoning",
+      "question": "How old was I when I moved to the United States?",
+      "expected": [
+        "27"
+      ],
+      "retrieved": [
+        "longeval_user has been living in the United States for the past five years on a work visa.",
+        "longeval_user has been living in the United States for the past five years on a work visa and is unsure if additional vaccinations are needed for the medical examination due to being originally from India.",
+        "longeval_user is a 32-year-old male.",
+        "longeval_user turned 32 on February 12th, 2023.",
+        "longeval_user is researching their great-aunt's experience as a refugee who was born in Germany during World War II and relocated to the United States."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "993da5e2",
+      "category": "temporal-reasoning",
+      "question": "How long had I been using the new area rug when I rearranged my living room furniture?",
+      "expected": [
+        "One week. Answers ranging from 7 days to 10 days are also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user prefers to water their fern, snake plant, and spider plant based on the soil moisture level, and is excited about their new area rug in the living room.",
+        "longeval_user recently rearranged their living room and got a new coffee table.",
+        "longeval_user prefers to complement their newly rearranged living room with decorative items like vases or sculptures.",
+        "longeval_user prefers a mix of modern and traditional style with neutral colors in their living room.",
+        "longeval_user is looking for recommendations on throw pillows for their living room to complement their new coffee table and furniture rearrangement."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "a3045048",
+      "category": "temporal-reasoning",
+      "question": "How many days before my best friend's birthday party did I order her gift?",
+      "expected": [
+        "7 days. 8 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user ordered a customized photo album from Shutterfly for their best friend's birthday on April 15th, 2022, and it arrived on April 20th, 2022, in time for the party.",
+        "longeval_user celebrated their best friend's 30th birthday party recently on April 22nd, 2022, and she loved the personalized photo album they got her.",
+        "longeval_user ordered a personalized photo album from Shutterfly on April 15th for their best friend's birthday and it turned out amazing!",
+        "longeval_user prefers to find a thoughtful and budget-friendly gift for their sister's birthday.",
+        "longeval_user prefers to add a personal touch to gifts by including a small message like 'Sis' or 'Birthday Girl'."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_d31cdae3",
+      "category": "temporal-reasoning",
+      "question": "Which trip did the narrator take first, the solo trip to Europe or the family road trip across the American Southwest?",
+      "expected": [
+        "The family road trip across the American Southwest"
+      ],
+      "retrieved": [
+        "longeval_user found their solo backpacking trip through Europe last summer to be an amazing experience.",
+        "longeval_user took a solo trip to Europe last summer where they spent two weeks backpacking through Italy, Switzerland, and Germany.",
+        "longeval_user took a 7-day family road trip to Utah in February 2023 that included scenic drives and hiking, but not camping.",
+        "longeval_user is planning a trip to Europe next summer to visit relatives in Germany, France, and the UK.",
+        "longeval_user is planning a trip to Europe next summer to visit relatives."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_cd90e484",
+      "category": "temporal-reasoning",
+      "question": "How long did I use my new binoculars before I saw the American goldfinches returning to the area?",
+      "expected": [
+        "Two weeks"
+      ],
+      "retrieved": [
+        "longeval_user acquired new binoculars on May 3rd, 2023, after months of waiting.",
+        "longeval_user noticed American goldfinches returning to their neighborhood area in late May 2023, which they view as a sign of spring.",
+        "longeval_user took a walk around their neighborhood after dinner on May 19th, 2023 and saw robins, sparrows, and American goldfinches.",
+        "longeval_user prefers new binoculars over their friend's old pair for better bird observation.",
+        "longeval_user prefers to improve their bird identification skills by listening to bird calls online and using binoculars."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_88806d6e",
+      "category": "temporal-reasoning",
+      "question": "Who did I meet first, Mark and Sarah or Tom?",
+      "expected": [
+        "Tom"
+      ],
+      "retrieved": [
+        "longeval_user met friends Mark and Sarah on a beach trip on approximately April 28, 2023.",
+        "longeval_user attended a friend's wedding on October 8th, 2023, where the bride Jen wore a bohemian-inspired dress and married Tom at a rustic barn in the countryside.",
+        "longeval_user met a person named Tom at a previous charity event.",
+        "longeval_user is planning to organize a charity event, seeking advice on how to get started",
+        "longeval_user prefers to ask Mark and Sarah about the local history and culture of their hometown."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "gpt4_4cd9eba1",
+      "category": "temporal-reasoning",
+      "question": "How many weeks have I been accepted into the exchange program when I started attending the pre-departure orientation sessions?",
+      "expected": [
+        "one week"
+      ],
+      "retrieved": [
+        "longeval_user was accepted to the UC Berkeley exchange program on March 20th, 2023.",
+        "longeval_user attends pre-departure orientation sessions at their home university every Friday since March 27th, 2023.",
+        "longeval_user submitted their application to the UC Berkeley exchange program on February 10th, 2023.",
+        "longeval_user is an exchange student planning to attend UC Berkeley.",
+        "longeval_user is scheduled to start physical therapy sessions twice a week since March 25th to strengthen leg muscles after being cleared by Dr. Thompson for a torn ACL."
+      ],
+      "hit": true,
+      "rr": 0.16666666666666666
+    },
+    {
+      "question_id": "gpt4_93f6379c",
+      "category": "temporal-reasoning",
+      "question": "Which group did I join first, 'Page Turners' or 'Marketing Professionals'?",
+      "expected": [
+        "Page Turners"
+      ],
+      "retrieved": [
+        "longeval_user joined the 'Marketing Professionals' group on LinkedIn on May 24th, 2023, where the group discusses industry trends and shares resources.",
+        "longeval_user joined a new book club group called 'Page Turners' last week.",
+        "longeval_user prefers to share insights and discussions from the 'Marketing Professionals' group on LinkedIn without coming across as too promotional or spammy.",
+        "longeval_user is a member of the 'Marketing Professionals' group on LinkedIn.",
+        "longeval_user prefers thrillers for book club discussions."
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "b29f3365",
+      "category": "temporal-reasoning",
+      "question": "How long had I been taking guitar lessons when I bought the new guitar amp?",
+      "expected": [
+        "Four weeks"
+      ],
+      "retrieved": [
+        "longeval_user bought a new guitar amp on May 13th, 2023, which has made a significant difference in the sound quality.",
+        "longeval_user has been taking weekly guitar lessons with a new instructor, Alex, for six weeks now and it's really helped them understand music theory better.",
+        "longeval_user has been practicing guitar for at least 30 minutes every day since starting lessons with Alex and has noticed significant improvement in fingerpicking and chord changes.",
+        "longeval_user bought a new overdrive pedal from Guitar Center last Saturday.",
+        "longeval_user prefers experimenting with different tones on their new amp."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_2f56ae70",
+      "category": "temporal-reasoning",
+      "question": "Which streaming service did I start using most recently?",
+      "expected": [
+        "Disney+"
+      ],
+      "retrieved": [
+        "longeval_user prefers adding HBO to their Amazon Prime Video subscription due to its convenience and existing membership",
+        "longeval_user is having trouble connecting a new streaming service to their smart TV.",
+        "longeval_user prefers exploring food-related content on HBO Max and original content on Amazon Prime Video.",
+        "longeval_user prefers comedy series like 'The Marvelous Mrs. Maisel' on Amazon Prime Video.",
+        "longeval_user prefers watching 'Game of Thrones' on HBO Max."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "6613b389",
+      "category": "temporal-reasoning",
+      "question": "How many months before my anniversary did Rachel get engaged?",
+      "expected": [
+        "2"
+      ],
+      "retrieved": [
+        "longeval_user's friend Rachel got engaged on May 15th, 2023.",
+        "longeval_user prefers to make their upcoming wedding anniversary on July 22nd a special celebration.",
+        "longeval_user received an engagement ring approximately one month ago (around late April 2023) and it is still too loose, requiring resizing.",
+        "longeval_user is thinking of writing a heartfelt letter to Rachel to commemorate her engagement.",
+        "longeval_user prefers a customized photo frame with a picture of Rachel's engagement ring and a special message."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_78cf46a3",
+      "category": "temporal-reasoning",
+      "question": "Which event happened first, the narrator losing their phone charger or the narrator receiving their new phone case?",
+      "expected": [
+        "Receiving the new phone case"
+      ],
+      "retrieved": [
+        "longeval_user is planning to buy a new phone charger since they lost their old one at the gym about two weeks ago.",
+        "longeval_user got a new phone case about one month ago (around late April 2023) and it has been doing a great job protecting their phone.",
+        "longeval_user met a new personal trainer at the gym a few days ago who was giving out free consultations.",
+        "longeval_user prefers dedicating a specific day each week to doing laundry and cleaning gym gear",
+        "longeval_user is happy with their new phone case and appreciates how well it protects their phone."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_0a05b494",
+      "category": "temporal-reasoning",
+      "question": "Who did I meet first, the woman selling jam at the farmer's market or the tourist from Australia?",
+      "expected": [
+        "the woman selling jam at the farmer's market"
+      ],
+      "retrieved": [
+        "longeval_user is inspired to try new dishes and flavor combinations after a conversation with a jam maker at the farmer's market on May 12th, 2023 (a Saturday morning two weeks ago).",
+        "longeval_user met an Australian tourist on the subway on May 25, 2023 who was lost and needed help navigating the subway map; they chatted about jobs and hobbies, and the tourist sent longeval_user a photo of the Sydney Opera House the next day.",
+        "longeval_user had a lovely conversation with a jam maker at the farmer's market two weeks ago on a Saturday morning.",
+        "longeval_user prefers to host a dinner party soon and experiment with different jam and cheese combinations.",
+        "longeval_user is interested in pairing different types of jam with cheeses and crackers."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_1a1dc16d",
+      "category": "temporal-reasoning",
+      "question": "Which event happened first, the meeting with Rachel or the pride parade?",
+      "expected": [
+        "The meeting with Rachel"
+      ],
+      "retrieved": [
+        "longeval_user's mentor, Rachel, provided guidance and support during a meeting on April 10th.",
+        "longeval_user prefers to understand the concept of intersectionality and its significance in the context of diversity and inclusion after attending the pride parade on May 1st, 2023.",
+        "longeval_user attended a pride parade in their city on May 1st, 2023, which inspired them to think about the importance of diversity and inclusion.",
+        "Planning Rachel's bachelorette party",
+        "Rachel had a baby boy named Max in March."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_2f584639",
+      "category": "temporal-reasoning",
+      "question": "Which gift did I buy first, the necklace for my sister or the photo album for my mom?",
+      "expected": [
+        "the photo album for my mom"
+      ],
+      "retrieved": [
+        "longeval_user purchased a beautiful necklace from Tiffany's for their sister's birthday, costing around $200, on May 15th, 2023.",
+        "longeval_user ordered a customized photo album from Shutterfly two weeks ago for mom's anniversary, which turned out well.",
+        "longeval_user created a personalized photo album for their mom featuring family vacation memories, including photos from beach trips and holidays with captions describing locations and dates, plus funny quotes and inside jokes.",
+        "longeval_user prefers getting a customized necklace for Mother's Day for their mom",
+        "longeval_user ordered a personalized photo album from Shutterfly on April 15th for their best friend's birthday and it turned out amazing!"
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_213fd887",
+      "category": "temporal-reasoning",
+      "question": "Which event did I participate in first, the volleyball league or the charity 5K run to raise money for a local children's hospital?",
+      "expected": [
+        "volleyball league"
+      ],
+      "retrieved": [
+        "longeval_user participated in a charity 5K run for a local children's hospital on April 20th, 2023.",
+        "longeval_user joined a recreational volleyball league with friends from work about 2 months ago (around March 20th, 2023) and plays every Thursday evening at the local community center.",
+        "longeval_user participated in the 'Run for the Cure' event on October 15th, where they ran 5 kilometers to raise money for breast cancer research.",
+        "longeval_user participated in the 'Run for the Cure' event on November 26th, 2023, and raised $250 for breast cancer research.",
+        "longeval_user prefers to stay motivated to continue participating in charity events"
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "gpt4_5438fa52",
+      "category": "temporal-reasoning",
+      "question": "Which event happened first, my attendance at a cultural festival or the start of my Spanish classes?",
+      "expected": [
+        "Spanish classes"
+      ],
+      "retrieved": [
+        "longeval_user has been taking Spanish classes for the past three months (since approximately February 20th, 2023).",
+        "longeval_user attended a cultural festival in their hometown on May 19th, 2023, where they met people from various ethnic backgrounds, which sparked interest in their own roots and heritage.",
+        "longeval_user prefers to learn Spanish due to its similarities with French and German",
+        "longeval_user has been taking Spanish classes.",
+        "longeval_user attended a class on vegan cuisine that got them inspired."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_c27434e8",
+      "category": "temporal-reasoning",
+      "question": "Which project did I start first, the Ferrari model or the Japanese Zero fighter plane model?",
+      "expected": [
+        "Japanese Zero fighter plane model"
+      ],
+      "retrieved": [
+        "longeval_user is building a 1/48 scale Japanese Zero fighter plane model, which they started on April 24th, 2023.",
+        "longeval_user is building a 1/48 scale Japanese Zero fighter plane model, which they started on or around April 26th, 2023.",
+        "longeval_user is working on a scale model of a 1980s-era Ferrari 288 GTO, which they started on May 5th, 2023.",
+        "longeval_user started building a Ferrari model on a Sunday afternoon on May 3rd, 2023, spending around 5 hours on the basic chassis and engine block assembly on a rainy day.",
+        "longeval_user started building their Ferrari model on a Sunday afternoon on May 7th, 2023, during rainy weather, spending around 5 hours working on the basic chassis and engine block assembly."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_fe651585",
+      "category": "temporal-reasoning",
+      "question": "Who became a parent first, Rachel or Alex?",
+      "expected": [
+        "Alex"
+      ],
+      "retrieved": [
+        "longeval_user's cousin Alex adopted a baby girl from China in January 2023.",
+        "Rachel had a baby boy named Max in March.",
+        "Rachel had a baby boy named Max in March, and longeval_user attended her baby shower in February.",
+        "longeval_user's cousin Alex had a positive experience with her agency that prioritized supporting birth mothers.",
+        "longeval_user is researching adoption agencies and considering their cousin Alex's positive experience as a reference point for their own adoption journey."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "8c18457d",
+      "category": "temporal-reasoning",
+      "question": "How many days had passed between the day I bought a gift for my brother's graduation ceremony and the day I bought a birthday gift for my best friend?",
+      "expected": [
+        "7 days. 8 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user recently got a wireless headphone for his brother as a graduation gift on March 8th, and it was a big hit.",
+        "longeval_user ordered a customized photo album from Shutterfly for their best friend's birthday on April 15th, 2022, and it arrived on April 20th, 2022, in time for the party.",
+        "longeval_user ordered a personalized photo album from Shutterfly on April 15th for their best friend's birthday and it turned out amazing!",
+        "longeval_user celebrated their best friend's 30th birthday party recently on April 22nd, 2022, and she loved the personalized photo album they got her.",
+        "longeval_user prefers to find a thoughtful and budget-friendly gift for their sister's birthday."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_70e84552_abs",
+      "category": "temporal-reasoning",
+      "question": "Which task did I complete first, fixing the fence or purchasing three cows from Peter?",
+      "expected": [
+        "The information provided is not enough. You mentioned fixing the fence but did not mention purchasing cows from Peter."
+      ],
+      "retrieved": [
+        "longeval_user fixed a broken fence on the east side of their property on May 1st, 2023, where their goats like to graze.",
+        "longeval_user owns a farm with goats and fixed a broken fence on the east side of the property on May 9th, 2023, where the goats like to graze.",
+        "longeval_user prefers to consider expanding dairy offerings by finalizing the purchase of a new cow soon.",
+        "longeval_user prefers a brown Swiss or a Jersey cow to increase milk production.",
+        "longeval_user prefers getting a new cow, maybe a brown Swiss or a jersey, to increase milk production."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_93159ced_abs",
+      "category": "temporal-reasoning",
+      "question": "How long have I been working before I started my current job at Google?",
+      "expected": [
+        "The information provided is not enough. From the information provided, You haven't started working at Google yet."
+      ],
+      "retrieved": [
+        "longeval_user has been working professionally for 9 years and currently uses a physical notebook to track tasks and reminders.",
+        "longeval_user is applying for an EB-2 visa and needs to gather documentation including diploma, official transcripts, employer letters confirming job title and dates of employment, pay stubs, W-2 forms, project reports, code repositories, awards or recognition, resume, letters of recommendation, and relevant certifications to demonstrate advanced degree and exceptional abilities in data science.",
+        "longeval_user is currently working long hours on a high-priority project with an increased commute, leaving little time for personal life.",
+        "longeval_user prefers using Google Calendar for managing personal appointments and birthdays.",
+        "longeval_user prefers to be honest and flexible when discussing long-term plans in the United States during job interviews."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "982b5123_abs",
+      "category": "temporal-reasoning",
+      "question": "When did I book the Airbnb in Sacramento?",
+      "expected": [
+        "The information provided is not enough. You only mentioned booking Airbnb in San Francisco."
+      ],
+      "retrieved": [
+        "longeval_user is planning a trip to San Francisco and is looking for Airbnb neighborhoods to stay in.",
+        "longeval_user prefers not to rent a car for transportation from the airport to their Airbnb in the city.",
+        "longeval_user has had a great experience with Airbnb in the past and stayed in Haight-Ashbury for their best friend's wedding, booking three months in advance.",
+        "longeval_user has had a great experience with Airbnb in the past.",
+        "longeval_user stayed in Haight-Ashbury via Airbnb for their best friend's wedding and had to book three months in advance."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "c8090214_abs",
+      "category": "temporal-reasoning",
+      "question": "How many days before I bought my iPad did I attend the Holiday Market?",
+      "expected": [
+        "The information provided is not enough. You mentioned getting the iPhone 13 Pro and attending the market, but you did not mention buying an iPad."
+      ],
+      "retrieved": [
+        "longeval_user attended the annual Holiday Market at the local mall on November 24th, 2023 (a week before Black Friday) and saw unique handmade jewelry there.",
+        "longeval_user attended the annual Holiday Market at the local mall on November 18th, 2023 (a week before Black Friday) and saw unique handmade jewelry there.",
+        "longeval_user attended the annual Holiday Market at the local mall on November 18th, 2023 (a week before Black Friday on November 24th, 2023), and saw unique handmade jewelry there that might be suitable as a gift for their sister.",
+        "longeval_user prefers to take a closer look at jewelry vendors at the Holiday Market to find a gift for their sister.",
+        "longeval_user attended the annual Holiday Market at the local mall on November 24th, 2023, about a week before Black Friday, and saw unique handmade jewelry there."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_c27434e8_abs",
+      "category": "temporal-reasoning",
+      "question": "Which project did I start first, the Ferrari model or the Porsche 991 Turbo S model?",
+      "expected": [
+        "The information provided is not enough. You did not mention starting the Porsche 991 Turbo S model."
+      ],
+      "retrieved": [
+        "longeval_user is working on a scale model of a 1980s-era Ferrari 288 GTO, which they started on May 5th, 2023.",
+        "longeval_user is working on a model of a 1980s-era Ferrari 288 GTO, started it about three weeks ago on a Sunday afternoon, and is looking for tips on achieving a realistic paint finish.",
+        "longeval_user is planning to add more complexity to the engine compartment and interior of their Ferrari model project.",
+        "longeval_user is planning to start working on the engine wiring and fuel lines for their '69 Camaro model.",
+        "longeval_user prefers adding more complexity to the engine compartment and interior of their Ferrari model."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_fe651585_abs",
+      "category": "temporal-reasoning",
+      "question": "Who became a parent first, Tom or Alex?",
+      "expected": [
+        "The information provided is not enough. You mentioned Alex becoming a parent in January, but you didn't mention anything about Tom."
+      ],
+      "retrieved": [
+        "longeval_user's cousin Alex adopted a baby girl from China in January 2023.",
+        "Rachel had a baby boy named Max in March, and longeval_user attended her baby shower in February.",
+        "longeval_user attended a friend's wedding on October 8th, 2023, where the bride Jen wore a bohemian-inspired dress and married Tom at a rustic barn in the countryside.",
+        "longeval_user's cousin Alex had a positive experience with her agency that prioritized supporting birth mothers.",
+        "longeval_user met a person named Tom at a previous charity event."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "0a995998",
+      "category": "multi-session",
+      "question": "How many items of clothing do I need to pick up or return from a store?",
+      "expected": [
+        "3"
+      ],
+      "retrieved": [
+        "longeval_user exchanged a pair of boots from Zara on February 5th, 2023, and still needs to pick up the new pair.",
+        "longeval_user exchanged boots at Zara on February 5th, 2023 because they were too small, and ordered a larger size but hasn't picked them up yet.",
+        "longeval_user needs to pick up their dry cleaning for the navy blue blazer worn to a meeting on February 8th, 2023.",
+        "longeval_user lent a spare pair of running shoes to their sister a few weeks ago and needs a reminder to ask for their return.",
+        "longeval_user lent spare running shoes to their sister a few weeks ago (around mid-May 2023) and needs to remind her to return them."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "6d550036",
+      "category": "multi-session",
+      "question": "How many projects have I led or am currently leading?",
+      "expected": [
+        "2"
+      ],
+      "retrieved": [
+        "longeval_user led the data analysis team in their Marketing Research class project and conducted a comprehensive market analysis for a new product launch.",
+        "longeval_user is currently working long hours on a high-priority project with an increased commute, leaving little time for personal life.",
+        "longeval_user assisted with a masterclass workshop led by Rachel Morrison at the Portland Film Festival.",
+        "longeval_user prefers tips on managing time more efficiently",
+        "longeval_user prefers a structured approach to pricing their project management and consulting services."
+      ],
+      "hit": true,
+      "rr": 0.1111111111111111
+    },
+    {
+      "question_id": "gpt4_59c863d7",
+      "category": "multi-session",
+      "question": "How many model kits have I worked on or bought?",
+      "expected": [
+        "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro."
+      ],
+      "retrieved": [
+        "longeval_user finished a Tamiya 1/48 scale Spitfire Mk.V model kit recently.",
+        "longeval_user is working on weathering a 1/72 scale B-29 bomber model.",
+        "longeval_user is currently working on a Ferrari 288 GTO model.",
+        "longeval_user acquired a 1/24 scale '69 Camaro model kit at a model show on May 27th, 2023.",
+        "longeval_user is also working on a Japanese Zero fighter plane model."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "b5ef892d",
+      "category": "multi-session",
+      "question": "How many days did I spend on camping trips in the United States this year?",
+      "expected": [
+        "8 days."
+      ],
+      "retrieved": [
+        "longeval_user recently completed a 3-day solo camping trip to Big Sur in early April.",
+        "longeval_user just returned from a 5-day camping trip to Yellowstone National Park on March 29, 2023, and found the experience amazing.",
+        "longeval_user took a short 3-day road trip to the nearby mountains with their family a week after returning from San Francisco",
+        "longeval_user prefers to bring essential gear for a comfortable camping trip, based on their experience in the mountains of Tennessee.",
+        "longeval_user prefers trying out new camping recipes, specifically Dutch oven recipes, on their next trip."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "e831120c",
+      "category": "multi-session",
+      "question": "How many weeks did it take me to watch all the Marvel Cinematic Universe movies and the main Star Wars films?",
+      "expected": [
+        "3.5 weeks"
+      ],
+      "retrieved": [
+        "longeval_user watched all 22 Marvel Cinematic Universe movies in a two-week binge.",
+        "longeval_user watched all the main Star Wars films in a marathon over a week and a half, finishing around May 21st, 2023.",
+        "longeval_user prefers watching all 22 MCU movies.",
+        "longeval_user prefers to organize their movie watching history",
+        "longeval_user prefers to add Star Wars movies including Rogue One and Solo to the list"
+      ],
+      "hit": true,
+      "rr": 0.1
+    },
+    {
+      "question_id": "3a704032",
+      "category": "multi-session",
+      "question": "How many plants did I acquire in the last month?",
+      "expected": [
+        "3"
+      ],
+      "retrieved": [
+        "longeval_user got a peace lily from the nursery two weeks ago.",
+        "longeval_user's peace lily has been losing some leaves, which they understand is normal for a newly acquired plant.",
+        "longeval_user has been starting seeds indoors under grow lights in the basement since February 20th - tomatoes, peppers, and cucumbers are all doing well, about 2-3 inches tall now.",
+        "longeval_user started some marigold seeds that arrived on March 3rd, and they're already germinating - excited to see them grow!",
+        "longeval_user prefers adding plants like Pothos, Peperomia, Dracaena, Air Plant, English Ivy, and ZZ Plant to complement their existing fern, snake plant, and spider plant in the reading nook."
+      ],
+      "hit": true,
+      "rr": 0.3333333333333333
+    },
+    {
+      "question_id": "gpt4_d84a3211",
+      "category": "multi-session",
+      "question": "How much total money have I spent on bike-related expenses since the start of the year?",
+      "expected": [
+        "$185"
+      ],
+      "retrieved": [
+        "longeval_user prefers a set of bike lights that cost $40, which has made a huge difference for their early morning rides.",
+        "longeval_user recently got a new set of bike lights installed, which were $40.",
+        "longeval_user took their bike in for a tune-up on April 20th, 2023, because the gears were getting stuck.",
+        "longeval_user's bike was repaired in mid-February.",
+        "longeval_user prefers to order a Saris Bones 2-Bike Trunk Rack next week."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "aae3761f",
+      "category": "multi-session",
+      "question": "How many hours in total did I spend driving to my three road trip destinations combined?",
+      "expected": [
+        "15 hours for getting to the three destinations (or 30 hours for the round trip)"
+      ],
+      "retrieved": [
+        "longeval_user took a 3-day road trip to nearby mountains with family on May 18, 2023 (one week after returning from San Francisco on May 11, 2023), driving about 4 hours to reach the campsite where they pitched a tent, roasted marshmallows, and told ghost stories.",
+        "longeval_user took a 7-day family road trip to Utah in February 2023 that included scenic drives and hiking, but not camping.",
+        "longeval_user enjoys coastal trips and had a great experience visiting Outer Banks in North Carolina, which is about four hours' drive from their home.",
+        "longeval_user is planning to visit the Road to Hana, a scenic drive with many waterfalls and hiking trails along the way.",
+        "longeval_user prefers to rent a car to drive the Road to Hana on Maui."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_f2262a51",
+      "category": "multi-session",
+      "question": "How many different doctors did I visit?",
+      "expected": [
+        "I visited three different doctors: a primary care physician, an ENT specialist, and a dermatologist."
+      ],
+      "retrieved": [
+        "longeval_user is considering scheduling an appointment with their gastroenterologist, Dr. Patel, to discuss further treatment options for their heartburn and acid reflux.",
+        "longeval_user will schedule an appointment with Dr. Smith and Dr. Johnson to discuss the numbness in their left hand on March 27th, 2023.",
+        "longeval_user schedules a follow-up appointment with Dr. Patel to discuss the impact of UTI and antibiotic use on chronic sinusitis on May 25th, 2023.",
+        "longeval_user had a follow-up appointment with Dr. Smith on March 1st, 2023 because a cough persisted after completing antibiotics for bronchitis.",
+        "longeval_user had a follow-up appointment with orthopedic surgeon Dr. Thompson on March 20th, and was relieved to hear that the knee is healing well"
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "dd2973ad",
+      "category": "multi-session",
+      "question": "What time did I go to bed on the day before I had a doctor's appointment?",
+      "expected": [
+        "2 AM"
+      ],
+      "retrieved": [
+        "longeval_user had a doctor's appointment on May 18th, 2023 at 10 AM where they received blood test results showing high cholesterol levels.",
+        "longeval_user prefers to do guided breathing sessions right before bed, around 9-10 pm.",
+        "longeval_user prefers to use their Fitbit Versa 3 to track sleep patterns and set reminders to maintain a consistent sleep schedule and bedtime routine.",
+        "longeval_user turned 32 on February 12th, 2023.",
+        "longeval_user is planning Olivia's party on March 17th, 2023."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "c4a1ceb8",
+      "category": "multi-session",
+      "question": "How many different types of citrus fruits have I used in my cocktail recipes?",
+      "expected": [
+        "3"
+      ],
+      "retrieved": [
+        "longeval_user prefers serving Sangria in a large pitcher with slices of orange and lemon for a dinner party.",
+        "longeval_user plans to serve Sangria made with Rioja wine and slices of orange and lemon at their dinner party.",
+        "longeval_user prefers to serve refreshing cocktails with fresh lime juice for their upcoming summer party and recently learned how to make a classic Daiquiri using fresh lime juice and simple syrup in a mixology class.",
+        "longeval_user recently made a Cucumber Gimlet by infusing gin with sliced cucumbers and mixing it with lime juice and simple syrup, which was a hit at their last party.",
+        "longeval_user prefers making a citrus and spice honey syrup using orange and cinnamon."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_a56e767c",
+      "category": "multi-session",
+      "question": "How many movie festivals that I attended?",
+      "expected": [
+        "I attended four movie festivals."
+      ],
+      "retrieved": [
+        "longeval_user assisted with a masterclass workshop led by Rachel Morrison at the Portland Film Festival.",
+        "longeval_user recently volunteered at the Portland Film Festival, where they helped with event coordination and met industry professionals.",
+        "longeval_user recently participated in a 48-hour film challenge at the Austin Film Festival, where they had to write, shoot, and edit a short film within an incredibly tight deadline.",
+        "longeval_user participated in the 48-hour film challenge at the Austin Film Festival on May 22nd, 2023, where their team had to write, shoot, and edit a short film within 48 hours.",
+        "longeval_user attended a Q&A session with the director of 'The Weight of Water' at the Seattle International Film Festival on May 22nd, 2023, where they discussed the film's unique narrative structure."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "6cb6f249",
+      "category": "multi-session",
+      "question": "How many days did I take social media breaks in total?",
+      "expected": [
+        "17 days"
+      ],
+      "retrieved": [
+        "longeval_user just got back from a 10-day break in mid-February.",
+        "longeval_user prefers to cut down on social media usage and took a week-long break in mid-January.",
+        "longeval_user prefers to maximize engagement on social media by posting at specific times of the day.",
+        "longeval_user prefers to avoid social media distractions when working on tasks that require concentration.",
+        "longeval_user has been making an effort to cut down on social media."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "46a3abf7",
+      "category": "multi-session",
+      "question": "How many tanks do I currently have, including the one I set up for my friend's kid?",
+      "expected": [
+        "3"
+      ],
+      "retrieved": [
+        "longeval_user has a 5-gallon tank with a solitary betta fish named Finley, which he got from his cousin.",
+        "longeval_user has set up a 20-gallon freshwater community tank named 'Amazonia'.",
+        "longeval_user has set up a new 20-gallon community tank.",
+        "longeval_user maintains a 1-gallon tank with guppies and plants.",
+        "longeval_user prefers setting up a separate quarantine tank for new fish before introducing them to the main tank to prevent disease transmission and monitor health."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "36b9f61e",
+      "category": "multi-session",
+      "question": "What is the total amount I spent on luxury items in the past few months?",
+      "expected": [
+        "$2,500"
+      ],
+      "retrieved": [
+        "longeval_user tends to splurge on luxury items like a Gucci handbag for $1,200.",
+        "longeval_user prefers to track their expenses using a spreadsheet and has noticed spending on luxury items when feeling stressed or celebratory, like a $800 evening gown for a wedding on May 20th, 2023.",
+        "longeval_user prefers to splurge on high-end accessories and luxury clothing items, often justifying them as investment pieces.",
+        "longeval_user splurges on luxury items every few months, usually when feeling stressed or celebratory, and does not set a budget beforehand.",
+        "longeval_user prefers to reassess spending habits and develop strategies to manage emotional spending."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "28dc39ac",
+      "category": "multi-session",
+      "question": "How many hours have I spent playing games in total?",
+      "expected": [
+        "140 hours"
+      ],
+      "retrieved": [
+        "longeval_user completed The Last of Us Part II on normal difficulty in 25 hours on 2023-05-25.",
+        "longeval_user prefers games similar to Celeste, which took them 10 hours to complete.",
+        "longeval_user prefers games with strong narratives, such as Uncharted 4 and God of War.",
+        "longeval_user is particularly interested in Ori and the Blind Forest and Gris, games similar to Celeste, which they also loved.",
+        "longeval_user spent a few hours on February 5th organizing their computer files and folders."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_2f8be40d",
+      "category": "multi-session",
+      "question": "How many weddings have I attended in this year?",
+      "expected": [
+        "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+      ],
+      "retrieved": [
+        "longeval_user attended their cousin's wedding on June 10th, 2023, and found it amazing.",
+        "longeval_user's best friend got married in San Francisco on March 26, 2023, and longeval_user attended a 5-day trip for the wedding.",
+        "longeval_user attended a friend's wedding on October 8th, 2023, where the bride Jen wore a bohemian-inspired dress and married Tom at a rustic barn in the countryside.",
+        "longeval_user was a bridesmaid at cousin Rachel's wedding and enjoyed catching up with family members they hadn't seen in years.",
+        "longeval_user is planning their own wedding."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "2e6d26dc",
+      "category": "multi-session",
+      "question": "How many babies were born to friends and family members in the last few months?",
+      "expected": [
+        "5"
+      ],
+      "retrieved": [
+        "longeval_user prefers to add birthdays of family and friends including Rachel's son Max born on March 1st, 2023, Mike and Emma's daughter Charlotte born around the same time, and their aunt's twins Ava and Lily born in April 2023.",
+        "longeval_user's friend David has a baby boy named Jasper (born May 6th, 2023).",
+        "longeval_user prefers to remember birthdays of friends and family, including Sarah's adopted daughter Aaliyah and neighbor's adopted dog Rocky's 'gotcha day'.",
+        "longeval_user cleaned their white Adidas sneakers last month.",
+        "longeval_user has been noticing slow speeds more during peak usage hours, especially when family members are using their devices simultaneously."
+      ],
+      "hit": true,
+      "rr": 0.06666666666666667
+    },
+    {
+      "question_id": "gpt4_15e38248",
+      "category": "multi-session",
+      "question": "How many pieces of furniture did I buy, assemble, sell, or fix in the past few months?",
+      "expected": [
+        "4"
+      ],
+      "retrieved": [
+        "longeval_user assembled an IKEA bookshelf for their home office about two months ago.",
+        "longeval_user fixed a wobbly leg on their kitchen table on May 27th, 2023 by tightening the screw with a screwdriver; the issue had been bothering them for months.",
+        "longeval_user fixed a broken fence on the east side of their property on May 1st, 2023, where their goats like to graze.",
+        "longeval_user prefers to sell their 5-piece Pearl Export drum set which they haven't played in years.",
+        "longeval_user is looking for recommendations on throw pillows for their living room to complement their new coffee table and furniture rearrangement."
+      ],
+      "hit": true,
+      "rr": 0.125
+    },
+    {
+      "question_id": "88432d0a",
+      "category": "multi-session",
+      "question": "How many times did I bake something in the past two weeks?",
+      "expected": [
+        "4"
+      ],
+      "retrieved": [
+        "longeval_user tried a sourdough bread recipe on Tuesday but the bread came out dense and heavy.",
+        "longeval_user baked a chocolate cake with espresso powder for their sister's birthday party on May 20th, 2023, and it turned out amazing.",
+        "longeval_user used their oven's convection setting for the first time on May 17th, 2023 to bake a batch of cookies and the results turned out amazing.",
+        "longeval_user prefers blending whole wheat flour with all-purpose flour in a 25% whole wheat, 75% all-purpose ratio for baking.",
+        "longeval_user prefers using the convection setting on their oven for baking cookies."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "80ec1f4f",
+      "category": "multi-session",
+      "question": "How many different museums or galleries did I visit in the month of February?",
+      "expected": [
+        "2"
+      ],
+      "retrieved": [
+        "longeval_user took their niece to the Natural History Museum on February 8th, and she loved the dinosaur exhibit!",
+        "longeval_user recently went on a guided tour at the History Museum on February 24th, which sparked their interest in ancient history and art.",
+        "longeval_user volunteered at the Children's Museum for their 'Art Afternoon' event on February 17th.",
+        "longeval_user visited The Art Cube on February 15th, 2023 and saw work by James Parker.",
+        "longeval_user prefers to find local art museums or galleries that offer workshops or classes for art inspiration"
+      ],
+      "hit": true,
+      "rr": 0.5
+    },
+    {
+      "question_id": "d23cf73b",
+      "category": "multi-session",
+      "question": "How many different cuisines have I learned to cook or tried out in the past few months?",
+      "expected": [
+        "4"
+      ],
+      "retrieved": [
+        "longeval_user learned how to make a perfect chicken tikka masala in a class on Indian cuisine, so that's definitely on the menu.",
+        "longeval_user tried out a recipe for Korean bibimbap from the cooking class's online recipe library, and it was amazing.",
+        "longeval_user recently attended a class on vegan cuisine where they learned how to make vegan lasagna with a cashew-based ricotta cheese substitute.",
+        "longeval_user is excited to experiment with new ingredients and cooking methods, including Korean and Indian cuisines, and is interested in using an Instant Pot. They also plan to grow herbs like basil, rosemary, and thyme, and vegetables like tomatoes, cucumbers, and carrots in their garden.",
+        "longeval_user prefers trying out different cuisines but usually makes simple American-style meals like pasta, chicken, and veggies."
+      ],
+      "hit": true,
+      "rr": 0.14285714285714285
+    },
+    {
+      "question_id": "gpt4_7fce9456",
+      "category": "multi-session",
+      "question": "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?",
+      "expected": [
+        "I viewed four properties before making an offer on the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: the kitchen of the bungalow needed serious renovation, the property in Cedar Creek was out of my budget, the noise from the highway was a deal-breaker for the 1-bedroom condo, and my offer on the 2-bedroom condo was rejected due to a higher bid."
+      ],
+      "retrieved": [
+        "longeval_user saw the 3-bedroom townhouse in the Brookside neighborhood on February 22nd.",
+        "longeval_user put in an offer on the 3-bedroom townhouse in Brookside on February 25th, 2023.",
+        "longeval_user fell in love with a 2-bedroom condo on February 15th, 2023.",
+        "longeval_user is in the process of buying a house in the Brookside neighborhood.",
+        "longeval_user prefers to make the offer contingent on the inspection and include a pre-approval letter to strengthen the offer."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "d682f1a2",
+      "category": "multi-session",
+      "question": "How many different types of food delivery services have I used recently?",
+      "expected": [
+        "3"
+      ],
+      "retrieved": [
+        "longeval_user prefers using food delivery services like Fresh Fusion for convenience.",
+        "longeval_user has been relying on Uber Eats for weekend meals recently.",
+        "longeval_user prefers healthier snack options over relying on Uber Eats.",
+        "longeval_user prefers to track their food intake to identify patterns and understand how different foods affect their body.",
+        "longeval_user has extensive recent experience with Uber and is considering ride-sharing services for their upcoming beach trip."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "7024f17c",
+      "category": "multi-session",
+      "question": "How many hours of jogging and yoga did I do last week?",
+      "expected": [
+        "0.5 hours"
+      ],
+      "retrieved": [
+        "longeval_user went for a 30-minute jog around the neighborhood on Saturday, May 20th, 2023",
+        "longeval_user has a yoga class on Tuesday evening on May 30th, 2023.",
+        "longeval_user used to practice yoga three times a week for 2 hours per session but has been slacking off for the past month (as of May 2023) and is trying to get back into it.",
+        "longeval_user is planning to get back into yoga this week, starting with one or two sessions per week.",
+        "longeval_user is trying to create a personalized morning routine that includes a 30-minute walk, meditation, and yoga on Tuesdays and Thursdays."
+      ],
+      "hit": true,
+      "rr": 0.3333333333333333
+    },
+    {
+      "question_id": "gpt4_5501fe77",
+      "category": "multi-session",
+      "question": "Which social media platform did I gain the most followers on over the past month?",
+      "expected": [
+        "TikTok"
+      ],
+      "retrieved": [
+        "longeval_user is trying to optimize their social media strategy and noticed a growth in Twitter followers from 420 to 540 over the past month.",
+        "longeval_user's Twitter follower count jumped from 420 to 540 over the past month.",
+        "longeval_user gained around 200 followers on TikTok over the past three weeks.",
+        "longeval_user's Facebook follower count has remained steady at around 800.",
+        "longeval_user prefers to drive engagement and increase their follower count on all platforms."
+      ],
+      "hit": true,
+      "rr": 0.3333333333333333
+    },
+    {
+      "question_id": "gpt4_2ba83207",
+      "category": "multi-session",
+      "question": "Which grocery store did I spend the most money at in the past month?",
+      "expected": [
+        "Thrive Market"
+      ],
+      "retrieved": [
+        "longeval_user spent around $120 at Walmart on May 16th, 2023 during a grocery shopping trip, and used a 10% off coupon on dairy products.",
+        "longeval_user ordered groceries from Publix via Instacart on May 19th, 2023, spent around $60 with a $10 delivery fee.",
+        "longeval_user went grocery shopping at Walmart last Saturday, exactly a week ago.",
+        "longeval_user prefers to use Instacart for grocery shopping frequently.",
+        "longeval_user prefers buying items like nuts, granola, and dried fruits in bulk to reduce household waste and save money"
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "2318644b",
+      "category": "multi-session",
+      "question": "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+      "expected": [
+        "$270"
+      ],
+      "retrieved": [
+        "longeval_user took a week-long vacation to Hawaii with family from April 20th to April 27th, 2023, flying American Airlines from their hometown to Honolulu with a connecting flight to Maui.",
+        "longeval_user prefers affordable outdoor activities and hiking trails in Maui to balance the cost of a luxurious resort stay.",
+        "longeval_user prefers to balance out the cost of staying at a luxurious resort in Maui by looking for free or affordable activities and dining options.",
+        "longeval_user prefers affordable accommodation options in Tokyo, as evidenced by their solo stay in a hostel last January.",
+        "longeval_user prefers affordable accommodation options for their trip to Japan, considering hostels as a cost-saving option."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "2ce6a0f2",
+      "category": "multi-session",
+      "question": "How many different art-related events did I attend in the past month?",
+      "expected": [
+        "4"
+      ],
+      "retrieved": [
+        "longeval_user attended the 'Women in Art' exhibition featuring the works of local artist Rachel Lee on February 10th, 2023.",
+        "longeval_user attended the opening night of the exhibition 'Disrupting Reality' on February 15th, 2023, curated by Rachel Lee, which featured unique installation pieces.",
+        "longeval_user attended a lecture titled 'The Evolution of Street Art' at the Art Gallery on March 3rd, 2023.",
+        "longeval_user met curator Rachel Lee at the opening night of 'The Art Cube', a new contemporary art gallery on March 2nd, 2023.",
+        "longeval_user might attend another event at The Art Cube soon."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_d12ceb0e",
+      "category": "multi-session",
+      "question": "What is the average age of me, my parents, and my grandparents?",
+      "expected": [
+        "59.6"
+      ],
+      "retrieved": [
+        "longeval_user turned 32 on February 12th, 2023.",
+        "longeval_user's great-aunt was born in Germany during World War II",
+        "longeval_user prefers to add birthdays of family and friends including Rachel's son Max born on March 1st, 2023, Mike and Emma's daughter Charlotte born around the same time, and their aunt's twins Ava and Lily born in April 2023.",
+        "longeval_user prefers to set a good example for their aging parents by getting healthier.",
+        "Seeing their grandparents slow down has motivated longeval_user to reflect on their own future and career goals."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "00ca467f",
+      "category": "multi-session",
+      "question": "How many doctor's appointments did I go to in March?",
+      "expected": [
+        "2"
+      ],
+      "retrieved": [
+        "longeval_user had a follow-up appointment with Dr. Smith on March 1st, 2023 because a cough persisted after completing antibiotics for bronchitis.",
+        "longeval_user had a follow-up appointment with orthopedic surgeon Dr. Thompson on March 20th, and was relieved to hear that the knee is healing well",
+        "longeval_user will schedule an appointment with Dr. Smith and Dr. Johnson to discuss the numbness in their left hand on March 27th, 2023.",
+        "longeval_user got their flu shot on March 20th at a local pharmacy.",
+        "longeval_user was pretty exhausted after the doctor's appointment on Thursday, so spent the rest of the day researching healthy recipes and making a meal plan for the week."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "b3c15d39",
+      "category": "multi-session",
+      "question": "How many days did it take for me to receive the new remote shutter release after I ordered it?",
+      "expected": [
+        "5 days. 6 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user ordered a new remote shutter release online on February 5th, 2023, after losing the old one during a photo walk.",
+        "longeval_user received a new remote shutter release on February 10th, 2023.",
+        "longeval_user mentioned that a new remote shutter release arrived on February 10th, and it has been a game-changer.",
+        "longeval_user prefers to take camera gear on a hike and recently got a new Peak Design bag, but had trouble finding items quickly, like when they lost a remote shutter release on February 5th, which they ordered a new one for online.",
+        "longeval_user received their pre-ordered laptop on February 25th, 2023, after a delay from the original expected arrival date of February 11th."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "gpt4_31ff4165",
+      "category": "multi-session",
+      "question": "How many health-related devices do I use in a day?",
+      "expected": [
+        "4"
+      ],
+      "retrieved": [
+        "longeval_user uses the Accu-Chek Aviva Nano system to test their blood sugar levels three times a day.",
+        "longeval_user has noticed their average daily step count has dropped recently despite wearing their Fitbit Versa 3 smartwatch.",
+        "longeval_user has been wearing a Fitbit Versa 3 smartwatch non-stop since acquiring it approximately three weeks ago (around May 1st, 2023).",
+        "longeval_user prefers to start tracking their sleep patterns more closely using their Fitbit Versa 3.",
+        "longeval_user prefers to use their Fitbit Versa 3 to track sleep patterns and set reminders to maintain a consistent sleep schedule and bedtime routine."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "eeda8a6d",
+      "category": "multi-session",
+      "question": "How many fish are there in total in both of my aquariums?",
+      "expected": [
+        "17"
+      ],
+      "retrieved": [
+        "longeval_user has a 5-gallon tank with a solitary betta fish named Finley, which he got from his cousin.",
+        "longeval_user has a betta fish named Bubbles in a 10-gallon tank.",
+        "longeval_user has set up a 20-gallon freshwater community tank named 'Amazonia'.",
+        "longeval_user prefers adding Lemon Tetras and Zebra Danios to their 20-gallon tank, believing they will get along with the neon tetras and the other fish already present.",
+        "longeval_user prefers adding more plants to Amazonia, considering suitable options for a community tank with neon tetras, harlequin rasboras, and platies."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "2788b940",
+      "category": "multi-session",
+      "question": "How many fitness classes do I attend in a typical week?",
+      "expected": [
+        "5"
+      ],
+      "retrieved": [
+        "longeval_user prefers to mix up their workout routine by attending different classes like Zumba, Hip Hop Abs, yoga, and BodyPump.",
+        "longeval_user is trying to create a personalized morning routine that includes a 30-minute walk, meditation, and yoga on Tuesdays and Thursdays.",
+        "longeval_user prefers protein-rich snacks to support their weightlifting classes, like BodyPump on Mondays, and is interested in protein shakes as a convenient way to get extra protein in their diet.",
+        "longeval_user prefers protein-rich snacks like Greek yogurt or hard-boiled eggs to support their weightlifting classes, like BodyPump on Mondays.",
+        "longeval_user prefers to take their fitness to the next level by improving overall fitness, including volleyball, gym workouts, and running."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "60bf93ed",
+      "category": "multi-session",
+      "question": "How many days did it take for my laptop backpack to arrive after I bought it?",
+      "expected": [
+        "5 days. 6 days (including the last day) is also acceptable."
+      ],
+      "retrieved": [
+        "longeval_user received a new laptop backpack on January 20th, 2023 and finds it very useful for carrying their work laptop back and forth.",
+        "longeval_user bought a backpack from Amazon on January 15th, 2023, which is comfortable, has plenty of space for a laptop and chargers, and is used daily to carry a work laptop to and from the office.",
+        "longeval_user received their pre-ordered laptop on February 25th, 2023, after a delay from the original expected arrival date of February 11th.",
+        "longeval_user bought the Anker PowerCore 20000 from Amazon on February 13th, 2023.",
+        "longeval_user owns a Dell XPS 13 laptop that arrived on February 25th, 2023."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "9d25d4e0",
+      "category": "multi-session",
+      "question": "How many pieces of jewelry did I acquire in the last two months?",
+      "expected": [
+        "3"
+      ],
+      "retrieved": [
+        "longeval_user acquired a new pair of emerald earrings from a flea market on May 27th, 2023 and loves them.",
+        "longeval_user purchased a beautiful necklace from Tiffany's for their sister's birthday, costing around $200, on May 15th, 2023.",
+        "longeval_user got their engagement ring a month ago, which is still a bit too loose.",
+        "longeval_user prefers cleaning their jewelry collection this weekend.",
+        "longeval_user prefers earrings similar to the silver necklace given for their best friend's 30th birthday on March 15th, 2023."
+      ],
+      "hit": true,
+      "rr": 1.0
+    },
+    {
+      "question_id": "129d1232",
+      "category": "multi-session",
+      "question": "How much money did I raise in total through all the charity events I participated in?",
+      "expected": [
+        "$5,850"
+      ],
+      "retrieved": [
+        "longeval_user participated in a Bike-a-Thon for Cancer Research and raised $5,000 on April 28th, 2023.",
+        "longeval_user participated in the 'Run for the Cure' event on November 26th, 2023, and raised $250 for breast cancer research.",
+        "longeval_user ran 5 kilometers in the 'Run for the Cure' event on October 15th, 2023 and raised $250 for breast cancer research.",
+        "longeval_user participated in a charity walk on April 2023 and raised $250 through sponsors.",
+        "longeval_user recently organized a charity yoga event that raised $600 for a local animal shelter."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "60472f9c",
+      "category": "multi-session",
+      "question": "How many projects have I been working on simultaneously, excluding my thesis?",
+      "expected": [
+        "2"
+      ],
+      "retrieved": [
+        "longeval_user works on a high-priority project at NovaTech.",
+        "longeval_user is working on a project at NovaTech and needs help with optimizing the API performance.",
+        "longeval_user is working on a short film project.",
+        "longeval_user is working on a group project for their Database Systems course.",
+        "longeval_user is working on an art project and is looking for good quality paints and brushes."
+      ],
+      "hit": false,
+      "rr": 0.0
+    },
+    {
+      "question_id": "gpt4_194be4b3",
+      "category": "multi-session",
+      "question": "How many musical instruments do I currently own?",
+      "expected": [
+        "I currently own 4 musical instruments. I've had the Fender Stratocaster electric guitar for 5 years, the Yamaha FG800 acoustic guitar for 8 years, the 5-piece Pearl Export drum set for an unspecified amount of time, and the Korg B1 piano for 3 years."
+      ],
+      "retrieved": [
+        "longeval_user has had their black Fender Stratocaster electric guitar for about 5 years now, and it's been their go-to instrument for playing blues and rock music.",
+        "longeval_user has had their Yamaha FG800 acoustic guitar for about 8 years.",
+        "longeval_user prefers exploring different genres on their ukulele.",
+        "longeval_user prefers Disney and movie themes for violin practice.",
+        "longeval_user prefers a beginner ukulele for practice and improvement."
+      ],
+      "hit": false,
+      "rr": 0.0
+    }
+  ]
+}

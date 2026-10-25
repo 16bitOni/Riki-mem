@@ -11,7 +11,7 @@ from .evaluation import EvalCase, load_cases
 from .heuristic import make_heuristic_plan
 from .keyword import PostgresTSIndex, SQLiteFTSIndex, select_keyword_index
 from .llm import LLMProvider, NullProvider, OpenAICompatibleProvider
-from .models import Entity, EntityRelation, Memory, MemoryEntity, User
+from .models import Entity, EntityRelation, Episode, EpisodeMemory, Memory, MemoryEntity, User
 from .schemas import EntityMention, Extraction, MemoryCreate, NewMemory, RelationMention, RetrievalPlan
 from .service import RikiMemory
 from .similarity import cosine_similarity, trigram_similarity
@@ -39,6 +39,8 @@ __all__ = [
     "Memory",
     "Entity",
     "EntityRelation",
+    "Episode",
+    "EpisodeMemory",
     "MemoryEntity",
     "User",
     "cosine_similarity",

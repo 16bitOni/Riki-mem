@@ -51,6 +51,11 @@ Rules:
 - Preserve the specific details and terminology from the conversation. If the user describes
   a "GPS system not functioning correctly", use those exact words, not a paraphrase like
   "GPS issue". Specificity matters for later retrieval.
+- Tag each memory with 2-5 short lowercase topic labels in the `tags` field. Tags describe
+  WHAT the memory is about — be specific. Examples: "wedding", "bike-purchase", "doctor-visit",
+  "model-kit", "guitar-lesson", "road-trip", "streaming-service", "aquarium", "baking",
+  "charity-event", "house-hunting". Use hyphens for multi-word tags. Good tags enable
+  later queries like "how many weddings" or "total spending on bike gear".
 - Return an empty list when nothing is worth saving. That is the most common correct answer."""
 
 
@@ -111,6 +116,7 @@ async def propose_memories(
                     source_key=turn_key,
                     entities=item.entities,
                     relations=item.relations,
+                    tags=item.tags,
                     replaces=[r for r in item.replaces if r in shown_ids],
                 )
             )

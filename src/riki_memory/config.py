@@ -12,7 +12,12 @@ from pydantic import BaseModel, Field
 
 class MemoryConfig(BaseModel):
     # -- retrieval -----------------------------------------------------------
-    recall_limit: int = Field(15, ge=1, le=30, description="Memories handed to the LLM per request.")
+    recall_limit: int = Field(15, ge=1, le=50, description="Memories handed to the LLM per request.")
+    aggregation_recall_limit: int = Field(
+        30, ge=1, le=100,
+        description="Recall limit used for aggregation queries ('how many X', 'total', 'all my'). "
+        "Higher than recall_limit to ensure all instances of a category fit in the window.",
+    )
     min_similarity: float = Field(
         0.3, ge=0, le=1, description="Cosine similarity below this is not a semantic match."
     )
@@ -26,6 +31,14 @@ class MemoryConfig(BaseModel):
     weight_semantic: float = Field(0.6, ge=0)
     weight_graph: float = Field(0.7, ge=0)
     weight_time: float = Field(0.5, ge=0)
+    weight_tag: float = Field(1.8, ge=0, description="RRF weight for the tag retrieval channel. "
+                              "High by default because tag matches are precise and exhaustive.")
+    tag_similarity_threshold: float = Field(
+        0.82, ge=0.5, le=1,
+        description="Cosine similarity threshold for normalizing a proposed tag to an "
+        "existing canonical tag at write time, and for expanding query tags to "
+        "semantically similar tags at read time. Lower = more aggressive merging.",
+    )
     importance_weight: float = Field(
         0.05, ge=0, le=0.3, description="Small boost per importance point above 3."
     )
@@ -78,3 +91,26 @@ class MemoryConfig(BaseModel):
         "cheap retrieval finds nothing.",
     )
     default_timezone: str = Field("UTC", description="Assumed timezone for users without one.")
+
+    # -- episodic memory -----------------------------------------------------
+    enable_episodes: bool = Field(
+        False,
+        description="Enable the episodic memory layer. Call close_session() after each "
+        "session to generate episode summaries and link them to atomic memories.",
+    )
+    weight_episode: float = Field(0.6, ge=0, description="RRF weight for the episode retrieval channel.")
+    episode_similarity_threshold: float = Field(
+        0.35, ge=0, le=1,
+        description="Minimum cosine similarity for an episode to match a query.",
+    )
+
+    # -- agentic retrieval ---------------------------------------------------
+    retrieval_mode: Literal["single", "agentic"] = Field(
+        "single",
+        description="'single' does one-shot hybrid search (original behaviour). "
+        "'agentic' runs a reflector after retrieval that may issue follow-up searches.",
+    )
+    max_retrieval_steps: int = Field(
+        3, ge=1, le=5,
+        description="Maximum total search steps in agentic mode (including the initial search).",
+    )

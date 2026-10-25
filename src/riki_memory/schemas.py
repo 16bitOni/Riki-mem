@@ -66,6 +66,11 @@ class RetrievalPlan(BaseModel):
         default_factory=list,
         description="Relationship words in the question, such as 'sister', 'husband', 'boss', 'works at'.",
     )
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Topic/category tags to search for (e.g. ['wedding', 'purchase', 'doctor-visit']). "
+        "Use these for counting or aggregation questions ('how many X', 'total', 'all my').",
+    )
     start: datetime | None = Field(
         default=None, description="Start of the time window the question refers to, if any."
     )
@@ -133,9 +138,22 @@ class NewMemory(BaseModel):
     )
     entities: list[EntityMention] = Field(default_factory=list)
     relations: list[RelationMention] = Field(default_factory=list)
+    tags: list[str] = Field(
+        default_factory=list,
+        description="2-5 short lowercase topic/category labels describing what this memory "
+        "is about. Examples: wedding, purchase, doctor-visit, hobby, travel, cooking, "
+        "fitness, work, family, pet, finance, home-improvement, streaming, gaming.",
+    )
     replaces: list[str] = Field(
         default_factory=list, description="IDs of known memories this one makes outdated."
     )
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalise_tags(cls, values):
+        if not isinstance(values, list):
+            return []
+        return [t.strip().lower().replace(" ", "-") for t in values if isinstance(t, str) and t.strip()][:10]
 
     @field_validator("kind", mode="before")
     @classmethod
@@ -165,6 +183,35 @@ class Extraction(BaseModel):
         return kept
 
 
+class FactItem(BaseModel):
+    """One countable/aggregatable fact extracted from a memory."""
+
+    category: str = Field(
+        description="Canonical category slug. Examples: 'charity-event', 'model-kit', "
+        "'wedding-attended', 'instrument-owned', 'doctor-visit', 'camping-trip', "
+        "'road-trip', 'bike-expense', 'property-viewed', 'baby-born', 'art-event', "
+        "'health-device'."
+    )
+    item_name: str = Field(
+        description="Specific name of this instance. Examples: 'Walk for Hunger 5K', "
+        "'Fender Stratocaster', 'Dr. Smith (primary care)', 'Rachel and Mike wedding'."
+    )
+    numeric_value: float | None = Field(
+        default=None,
+        description="Numeric amount if explicitly stated (dollars raised, hours driven, days)."
+    )
+    unit: str | None = Field(
+        default=None,
+        description="Unit for numeric_value: 'USD', 'hours', 'days', 'km', etc."
+    )
+
+
+class FactExtraction(BaseModel):
+    """Structured facts extracted from a single memory for aggregation queries."""
+
+    facts: list[FactItem] = Field(default_factory=list)
+
+
 class MemoryCreate(Strict):
     """The only way a memory gets into the database.
 
@@ -181,4 +228,5 @@ class MemoryCreate(Strict):
     source_key: Annotated[str, StringConstraints(max_length=512)] | None = None
     entities: list[EntityMention] = Field(default_factory=list, max_length=10)
     relations: list[RelationMention] = Field(default_factory=list, max_length=10)
+    tags: list[str] = Field(default_factory=list, max_length=10)
     replaces: list[str] = Field(default_factory=list, max_length=20)
