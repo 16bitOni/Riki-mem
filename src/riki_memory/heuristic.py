@@ -69,6 +69,10 @@ def is_temporal_arithmetic(text: str) -> bool:
     return bool(_TEMPORAL_CALC_RE.search(text))
 
 
+_ANCHOR_BEFORE_AFTER_DIDI_RE = re.compile(
+    r"(?:before|after|since)\s+(?:the\s+|my\s+)?(.+?)\s+did\s+I\s+",
+    re.IGNORECASE,
+)
 _ANCHOR_BEFORE_AFTER_RE = re.compile(
     r"(?:before|after|since)\s+(?:the\s+|my\s+)?(.+?)(?:\s+did\s+|\s+was\s+|\s+have\s+|\?|$)",
     re.IGNORECASE,
@@ -92,13 +96,19 @@ def extract_temporal_anchors(text: str) -> list[str]:
     if m:
         return [m.group(1).strip(), m.group(2).strip()]
 
+    # Primary: "before/after X did I Y" — terminates on "did I" so anchor1 captures
+    # the full reference phrase even when it contains "was" or "have" internally.
+    m = _ANCHOR_BEFORE_AFTER_DIDI_RE.search(text)
+    if m:
+        anchor1 = m.group(1).strip()
+        anchor2 = text[m.end():].rstrip("?").strip()
+        if anchor2:
+            return [anchor1, anchor2]
+
+    # Fallback: broader terminators for other temporal phrasings.
     m = _ANCHOR_BEFORE_AFTER_RE.search(text)
     if m:
         anchor1 = m.group(1).strip()
-        remainder = text[m.end():].strip().rstrip("?").strip()
-        if not remainder:
-            remainder = text[:m.start()].strip()
-        # Try to extract the second event from the remainder
         verb_match = re.search(
             r"(?:did\s+I\s+|I\s+|was\s+I\s+)(.+?)(?:\?|$)", text[m.end():],
             re.IGNORECASE,

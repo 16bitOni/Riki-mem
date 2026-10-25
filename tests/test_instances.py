@@ -37,7 +37,7 @@ async def test_save_memory_creates_instance_rows(memory, provider, make_memory_w
         content="Attended Rachel and Mike's wedding on August 15, 2023.",
         instances=[
             InstanceItem(
-                category="wedding-attended",
+                kind="event", subject="wedding",
                 instance_key="rachel-mike-wedding",
                 display_name="Rachel and Mike wedding",
                 status="occurred",
@@ -56,7 +56,7 @@ async def test_save_memory_creates_instance_rows(memory, provider, make_memory_w
         )).all()
 
     assert len(rows) == 1
-    assert rows[0].category == "wedding-attended"
+    assert (rows[0].kind, rows[0].subject) == ("event", "wedding")
     assert rows[0].instance_key == "rachel-mike-wedding"
     assert rows[0].status == "occurred"
     assert rows[0].source_memory_id == saved.id
@@ -65,7 +65,7 @@ async def test_save_memory_creates_instance_rows(memory, provider, make_memory_w
 async def test_instance_dedup_same_key(memory, provider, make_memory_with_instances):
     """Two memories about the same instance_key don't create duplicate Instance rows."""
     inst = InstanceItem(
-        category="instrument",
+        kind="item", subject="instrument",
         instance_key="fender-stratocaster",
         display_name="Fender Stratocaster",
         status="current",
@@ -87,7 +87,7 @@ async def test_instance_dedup_same_key(memory, provider, make_memory_with_instan
         rows = (await session.scalars(
             select(Instance).where(
                 Instance.user_id == "u1",
-                Instance.category == "instrument",
+                Instance.subject == "instrument",
             )
         )).all()
 
@@ -101,7 +101,7 @@ async def test_instance_status_filtering(memory, provider, make_memory_with_inst
     data1 = make_memory_with_instances(
         content="I own a ukulele.",
         instances=[InstanceItem(
-            category="instrument",
+            kind="item", subject="instrument",
             instance_key="ukulele",
             display_name="Ukulele",
             status="current",
@@ -110,7 +110,7 @@ async def test_instance_status_filtering(memory, provider, make_memory_with_inst
     data2 = make_memory_with_instances(
         content="I sold my old drum set.",
         instances=[InstanceItem(
-            category="instrument",
+            kind="item", subject="instrument",
             instance_key="drum-set",
             display_name="Drum set",
             status="former",
@@ -119,7 +119,7 @@ async def test_instance_status_filtering(memory, provider, make_memory_with_inst
     data3 = make_memory_with_instances(
         content="I want to buy a piano someday.",
         instances=[InstanceItem(
-            category="instrument",
+            kind="item", subject="instrument",
             instance_key="piano",
             display_name="Piano",
             status="desired",
@@ -134,14 +134,14 @@ async def test_instance_status_filtering(memory, provider, make_memory_with_inst
         current = (await session.scalars(
             select(Instance).where(
                 Instance.user_id == "u1",
-                Instance.category == "instrument",
+                Instance.subject == "instrument",
                 Instance.status.in_(["current", "occurred"]),
             )
         )).all()
         all_inst = (await session.scalars(
             select(Instance).where(
                 Instance.user_id == "u1",
-                Instance.category == "instrument",
+                Instance.subject == "instrument",
             )
         )).all()
 
@@ -151,22 +151,30 @@ async def test_instance_status_filtering(memory, provider, make_memory_with_inst
 
 
 async def test_instance_item_slugify():
-    """InstanceItem normalizes instance_key and category to slugs."""
+    """InstanceItem slugifies the key and makes the subject a singular slug."""
     item = InstanceItem(
-        category="Wedding Attended",
+        kind="Attendance",
+        subject="Family Weddings",
         instance_key="Rachel & Mike's Wedding!!",
         display_name="Rachel and Mike wedding",
         status="occurred",
     )
-    assert item.category == "wedding-attended"
+    assert item.kind == "event"
+    assert item.subject == "family-wedding"
     assert item.instance_key == "rachel-mike-s-wedding"
+
+
+async def test_instance_item_unknown_kind_becomes_other():
+    item = InstanceItem(kind="hobbyhorse", subject="x", instance_key="k", display_name="d",
+                        status="occurred")
+    assert item.kind == "other"
 
 
 async def test_instance_item_status_validation():
     """InstanceItem rejects invalid status values."""
     with pytest.raises(Exception):
         InstanceItem(
-            category="wedding-attended",
+            kind="event", subject="wedding",
             instance_key="test-wedding",
             display_name="Test",
             status="invalid_status",

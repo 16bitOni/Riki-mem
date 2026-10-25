@@ -2,13 +2,11 @@
 host application: the host only passes opaque ``user_id`` strings and calls
 ``save`` / ``search``. Nobody migrates these tables into their own database.
 
-SQLite is the default backend. The Postgres-only tricks from the original
-(pg_trgm, tsvector, pgvector/HNSW) are replaced with portable equivalents:
-Python trigram similarity, an FTS5 side table, and brute-force cosine over
-per-user candidate vectors (fine at personal-memory scale).
+Postgres only. Embeddings are pgvector ``vector`` columns with no fixed
+dimension, so vectors from an old and a new embedding model can live side by
+side during a re-embed; ``vectors.py`` gives each model its own HNSW index.
 """
 
-import json
 import uuid
 from datetime import datetime, timezone
 
@@ -22,12 +20,12 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    func,
     text,
 )
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.types import TypeDecorator
+
+from .vectors import Embedding
 
 
 def utcnow() -> datetime:
@@ -40,24 +38,6 @@ def new_id() -> str:
 
 class Base(DeclarativeBase):
     pass
-
-
-class VectorJSON(TypeDecorator):
-    """An embedding stored as a JSON array of floats. ``deferred`` at the column
-    level so listing memories never loads vectors."""
-
-    impl = Text
-    cache_ok = True
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return None
-        return json.dumps([float(x) for x in value])
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return None
-        return [float(x) for x in json.loads(value)]
 
 
 class User(Base):
@@ -86,7 +66,7 @@ class Memory(Base):
     event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     source_key: Mapped[str | None] = mapped_column(String(512))
     # Only filled when meaning-search is useful. `deferred`: never loaded unless asked for.
-    embedding = mapped_column(VectorJSON, nullable=True, deferred=True)
+    embedding = mapped_column(Embedding(), nullable=True, deferred=True)
     # Drift protection: which model made the vector, and whether this memory should have one at all.
     # Search only compares vectors from the current model; `reembed_stale` brings the rest up to date.
     wants_embedding: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -176,7 +156,7 @@ class Episode(Base):
     session_key: Mapped[str] = mapped_column(String(512))
     summary: Mapped[str] = mapped_column(Text)
     date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    embedding = mapped_column(VectorJSON, nullable=True, deferred=True)
+    embedding = mapped_column(Embedding(), nullable=True, deferred=True)
     embedding_model: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -204,45 +184,6 @@ class EpisodeMemory(Base):
     __table_args__ = (Index("episode_memory_memory", "memory_id"),)
 
 
-class CategoryFact(Base):
-    """One enumerable instance of a tagged category for a user.
-
-    Written at save_memory() time for every memory whose tags contain a
-    recognised aggregation category (e.g. "charity-event", "instrument",
-    "wedding").  Enables O(1) SQL COUNT/SUM for "how many X" queries instead
-    of relying on top-k vector retrieval.
-
-    ``item_name``: the specific instance name extracted from the memory content.
-    ``numeric_value`` / ``unit``: optional (e.g. amount raised, expense amount).
-    ``date``: event_at from the source memory.
-    ``source_memory_id``: the memory that produced this fact (for audit/dedup).
-    """
-
-    __tablename__ = "category_facts"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    category: Mapped[str] = mapped_column(String(100))
-    item_name: Mapped[str] = mapped_column(String(500))
-    numeric_value: Mapped[float | None] = mapped_column(nullable=True)
-    unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    source_memory_id: Mapped[str] = mapped_column(
-        ForeignKey("memories.id", ondelete="CASCADE"), index=True
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-    __table_args__ = (
-        # One fact per (user, category, source memory) — prevents double-counting
-        # if save_memory is retried.
-        UniqueConstraint(
-            "user_id", "category", "source_memory_id",
-            name="category_fact_user_category_memory_unique",
-        ),
-        Index("category_fact_user_category", "user_id", "category"),
-    )
-
-
 class Instance(Base):
     """One countable thing: an event attended, an item owned, a visit made.
 
@@ -250,6 +191,10 @@ class Instance(Base):
     (zero additional cost).  Enables deterministic SQL COUNT/SUM/AVG for
     aggregation queries instead of LLM-counting over ranked text.
 
+    ``kind``: a small, domain-free closed list (event, item, visit, ...).
+    ``subject``: the free-text noun a person counts by ("instrument",
+    "wedding", "doctor"), singular and normalised per user, so the schema
+    works for things nobody anticipated.
     ``instance_key``: normalized identity (e.g. "fender-stratocaster"),
     so the same real-world thing mentioned across sessions deduplicates.
     ``status``: separates occurrences from plans/desires/former — the filter
@@ -260,7 +205,8 @@ class Instance(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    category: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20))
+    subject: Mapped[str] = mapped_column(String(100))
     instance_key: Mapped[str] = mapped_column(String(500))
     display_name: Mapped[str] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(20))
@@ -278,9 +224,8 @@ class Instance(Base):
             name="instance_status_valid",
         ),
         UniqueConstraint(
-            "user_id", "category", "instance_key", "source_memory_id",
-            name="instance_user_cat_key_memory_unique",
+            "user_id", "kind", "subject", "instance_key", "source_memory_id",
+            name="instance_user_kind_subject_key_memory_unique",
         ),
-        Index("instance_user_category", "user_id", "category"),
-        Index("instance_user_category_status", "user_id", "category", "status"),
+        Index("instance_user_subject", "user_id", "subject"),
     )

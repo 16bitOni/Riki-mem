@@ -11,13 +11,14 @@ import logging
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from . import telemetry
 from .config import MemoryConfig
 from .db import Database
 from .llm import LLMProvider
 from .models import Instance, Memory
 from .profile import refresh_profile_if_stale
 from .recall import format_memories
-from .schemas import Extraction, InstanceItem, MemoryCreate
+from .schemas import Extraction, MemoryCreate
 from .store import save_memory
 from .timeutil import localize, now_in
 from .users import ensure_user
@@ -66,14 +67,15 @@ Rules:
   "My cousin's wedding" should become "Rachel and Mike's wedding" if names are given.
 - Return an empty list when nothing is worth saving. That is the most common correct answer.
 
-INSTANCE EXTRACTION (in the `instances` list alongside `memories`):
-For each memory that mentions a countable or aggregatable thing, also extract instances.
-- category: choose from this closed list: model-kit, instrument, wedding-attended,
-  doctor-visit, road-trip, camping-trip, bike-expense, aquarium-fish, fish-tank,
-  health-device, charity-event, property-viewed, game-played, movie-festival,
-  citrus, baby-born, art-event, pet, vehicle, subscription, class-taken,
-  concert-attended, book-read, recipe-made. Create a new lowercase-hyphenated
-  slug ONLY if none of these fit.
+INSTANCE EXTRACTION (in the `instances` list INSIDE each memory):
+For each memory that mentions a countable or aggregatable thing, list its instances
+inside that memory. An instance belongs only to the memory that mentions it — never
+copy an instance onto other memories from the same turn.
+- kind: exactly one of event, item, visit, trip, media, person, activity, money, other.
+- subject: the everyday noun you would count it by, singular — the X in "how many X".
+  Prefer the broader class a person would ask about ("instrument" for a guitar,
+  "doctor" for a dermatologist, "wedding" for a wedding). Reuse a KNOWN SUBJECT
+  whenever one fits; invent a new one only when none does.
 - instance_key: normalized lowercase-hyphenated identity string. The same
   real-world thing MUST always get the same key. "Rachel and Mike's wedding"
   and "my cousin's wedding" (if same event) = "rachel-mike-wedding".
@@ -138,10 +140,18 @@ async def propose_memories(
             lines = []
             for inst in existing_instances:
                 date_str = inst.date.strftime("%Y-%m-%d") if inst.date else ""
-                lines.append(f"- [{inst.category}] {inst.instance_key} ({inst.status}{', ' + date_str if date_str else ''})")
-            known_instances_text = "\n\nKNOWN INSTANCES (use the same instance_key for the same thing):\n" + "\n".join(lines)
+                lines.append(
+                    f"- [{inst.kind}/{inst.subject}] {inst.instance_key} "
+                    f"({inst.status}{', ' + date_str if date_str else ''})"
+                )
+            subjects = sorted({inst.subject for inst in existing_instances})
+            known_instances_text = (
+                "\n\nKNOWN SUBJECTS: " + ", ".join(subjects)
+                + "\n\nKNOWN INSTANCES (use the same instance_key for the same thing):\n"
+                + "\n".join(lines)
+            )
     except Exception:
-        pass
+        log.warning("could not load known instances for %s; extracting without them", user.id, exc_info=True)
 
     result = await llm.chat_json(
         system=EXTRACTION_PROMPT.format(
@@ -158,7 +168,6 @@ async def propose_memories(
     )
 
     shown_ids = {str(m.id) for m in known}  # the model may only retire memories it was shown
-    instances = result.instances or []
     memories = []
     for item in result.memories:
         try:
@@ -175,11 +184,13 @@ async def propose_memories(
                     relations=item.relations,
                     tags=item.tags,
                     replaces=[r for r in item.replaces if r in shown_ids],
-                    instances=instances,
+                    instances=item.instances,
                 )
             )
         except ValidationError as error:
             log.warning("skipped an invalid memory from the extractor: %s", error)
+            telemetry.record_dropped()
+    telemetry.record_proposed(len(memories))
     return memories
 
 
@@ -210,6 +221,7 @@ async def extract_and_save_turn(
             saved.append(memory)
         await refresh_profile_if_stale(db, llm, config, user_id)
         return saved
-    except Exception:
+    except Exception as error:
         log.exception("memory extraction failed")
+        telemetry.record_failure(error)
         return []

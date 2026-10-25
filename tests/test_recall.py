@@ -7,9 +7,9 @@ from riki_memory.llm import NullProvider
 
 
 @pytest.fixture
-async def memory_no_llm(tmp_path):
+async def memory_no_llm(db_url):
     mem = RikiMemory(
-        database_url=f"sqlite+aiosqlite:///{tmp_path}/nollm.db",
+        database_url=db_url,
         llm=NullProvider(),  # raises on any model call
         config=MemoryConfig(),
     )

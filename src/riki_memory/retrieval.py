@@ -2,8 +2,8 @@
 
 Five independent "channels" each return a ranked list of memory ids:
 
-    keyword  - exact words (SQLite FTS5, BM25 ranked)
-    semantic - similar meaning (brute-force cosine over the user's vectors)
+    keyword  - exact words (Postgres full-text search, ts_rank_cd ranked)
+    semantic - similar meaning (pgvector HNSW, cosine)
     time     - inside a date window
     graph    - linked to a named person/place/project (and their direct neighbours)
     episode  - memories from sessions whose summary matches the query
@@ -27,10 +27,10 @@ from sqlalchemy import String, func, literal, or_, select, union_all
 from .config import MemoryConfig
 from .db import Database
 from .keyword import CHANNEL_DEPTH, live_clauses
+from .keyword import keyword_search as _keyword_search
 from .llm import LLMProvider
 from .models import Entity, EntityRelation, Episode, EpisodeMemory, Memory, MemoryEntity
 from .schemas import RetrievalPlan
-from .similarity import cosine_similarity
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +68,8 @@ def importance_boost(importance: int, weight: float) -> float:
 async def keyword_search(
     db: Database, user_id: str, keywords: list[str], start: datetime | None, end: datetime | None
 ) -> list[str]:
-    """Keyword channel, dispatched to the engine matching the database URL
-    (SQLite FTS5/BM25 or Postgres tsvector/ts_rank_cd)."""
-    return await db.keywords.search(db, user_id, keywords, start, end)
+    """Keyword channel: Postgres full-text search, ranked with ts_rank_cd."""
+    return await _keyword_search(db, user_id, keywords, start, end)
 
 
 async def semantic_search(
@@ -86,23 +85,12 @@ async def semantic_search(
     if vector is None:
         vector = await llm.embed(text_query)
     async with db.session_scope() as session:
-        rows = (
-            await session.execute(
-                select(Memory.id, Memory.embedding).where(
-                    *live_clauses(user_id, start, end),
-                    Memory.embedding.is_not(None),
-                    # Never compare vectors made by different models.
-                    Memory.embedding_model == llm.embedding_model_id,
-                )
-            )
-        ).all()
-    scored = [
-        (mid, cosine_similarity(vec, vector))
-        for mid, vec in rows
-        if vec and cosine_similarity(vec, vector) >= config.min_similarity
-    ]
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return [mid for mid, _ in scored[:CHANNEL_DEPTH]]
+        # Only vectors from the current model are compared (see vectors.py).
+        scored = await db.vectors.nearest(
+            session, Memory, live_clauses(user_id, start, end), vector,
+            llm.embedding_model_id, CHANNEL_DEPTH, config.min_similarity,
+        )
+    return [mid for mid, _ in scored]
 
 
 async def time_window(
@@ -264,24 +252,12 @@ async def episode_search(
     if vector is None:
         vector = await llm.embed(text_query)
     async with db.session_scope() as session:
-        rows = (
-            await session.execute(
-                select(Episode.id, Episode.embedding).where(
-                    Episode.user_id == user_id,
-                    Episode.embedding.is_not(None),
-                    Episode.embedding_model == llm.embedding_model_id,
-                )
-            )
-        ).all()
-
-    matching = [
-        (eid, cosine_similarity(vec, vector))
-        for eid, vec in rows
-        if vec and cosine_similarity(vec, vector) >= config.episode_similarity_threshold
-    ]
+        matching = await db.vectors.nearest(
+            session, Episode, [Episode.user_id == user_id], vector,
+            llm.embedding_model_id, CHANNEL_DEPTH, config.episode_similarity_threshold,
+        )
     if not matching:
         return []
-    matching.sort(key=lambda pair: pair[1], reverse=True)
 
     async with db.session_scope() as session:
         memory_ids = (

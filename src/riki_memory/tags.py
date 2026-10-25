@@ -77,6 +77,53 @@ async def expand_tags_semantically(
     return list(expanded)
 
 
+async def get_user_subjects(db, user_id: str) -> set[str]:
+    """Every instance subject this user has, e.g. {"instrument", "wedding"}."""
+    from sqlalchemy import select
+    from .models import Instance
+
+    async with db.session_scope() as session:
+        rows = await session.scalars(
+            select(Instance.subject).where(Instance.user_id == user_id).distinct()
+        )
+        return set(rows.all())
+
+
+async def normalize_subjects(
+    llm, db, user_id: str, subjects: list[str], threshold: float
+) -> list[str]:
+    """Converge instance subjects onto the user's existing ones.
+
+    Subjects arrive already singular ("instruments" -> "instrument"), so this
+    only has to catch different words for the same class ("musical-instrument"
+    vs "instrument"), by embedding similarity — the same rule tags use.
+    """
+    if not subjects:
+        return subjects
+    existing = await get_user_subjects(db, user_id)
+    if not existing:
+        return subjects
+    return [
+        subject if subject in existing else await _closest(llm, subject, existing, threshold) or subject
+        for subject in subjects
+    ]
+
+
+async def _closest(llm, term: str, vocabulary: set[str], threshold: float) -> str | None:
+    term_vec = await get_tag_embedding(llm, term)
+    if term_vec is None:
+        return None
+    best, best_sim = None, threshold
+    for candidate in vocabulary:
+        vec = await get_tag_embedding(llm, candidate)
+        if vec is None:
+            continue
+        sim = cosine_similarity(term_vec, vec)
+        if sim > best_sim:
+            best, best_sim = candidate, sim
+    return best
+
+
 async def normalize_tags(
     llm, db, user_id: str, tags: list[str], threshold: float
 ) -> list[str]:

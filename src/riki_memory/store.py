@@ -19,103 +19,20 @@ import logging
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
-
-import re
 
 from .config import MemoryConfig
 from .db import Database
 from .entities import link_entities, prune_orphaned_entities
 from .llm import LLMProvider
-from .models import CategoryFact, Instance, Memory
+from .models import Instance, Memory, User
 from .schemas import InstanceItem, MemoryCreate
 from .similarity import cosine_similarity, trigram_similarity
-from .tags import normalize_tags
-
-# Tags that map directly to a category name for materialized aggregation.
-# The value is the canonical category key stored in category_facts.
-_TAG_TO_CATEGORY: dict[str, str] = {
-    "charity-event": "charity_event_attended",
-    "charity":       "charity_event_attended",
-    "wedding":       "wedding_attended",
-    "model-kit":     "model_kit",
-    "model-tanks":   "model_kit",
-    "instrument":    "instrument_owned",
-    "doctor-visit":  "doctor_visited",
-    "camping":       "camping_trip",
-    "bike-purchase": "bike_expense",
-    "bike-maintenance": "bike_expense",
-    "aquarium":      "aquarium_fish",
-    "health-device": "health_device",
-    "road-trip":     "road_trip",
-    "birth-event":   "baby_born",
-    "property-viewing": "property_viewed",
-    "art-event":     "art_event_attended",
-    "citrus":        "citrus_used",
-}
-
-# Dollar amounts: $ followed by digits (optionally with comma/period separators)
-_AMOUNT_RE = re.compile(r"\$\s*([\d,]+(?:\.\d+)?)")
-
-
-def _extract_amount(content: str) -> tuple[float | None, str | None]:
-    """Pull the first dollar amount out of a memory string, if any."""
-    m = _AMOUNT_RE.search(content)
-    if not m:
-        return None, None
-    try:
-        return float(m.group(1).replace(",", "")), "USD"
-    except ValueError:
-        return None, None
-
-
-def _item_name_from_content(content: str) -> str:
-    """Best-effort: strip the leading 'longeval_user ...' prefix to get a short item name."""
-    # Remove "longeval_user <verb phrase>" prefix, keep the specific named thing
-    trimmed = re.sub(r"^longeval_user\s+\S+\s+", "", content, count=1).strip()
-    # Cap at 200 chars
-    return trimmed[:200] if trimmed else content[:200]
-
-
-async def _upsert_category_facts(
-    session,
-    user_id: str,
-    memory: Memory,
-    tags: list[str],
-    content: str,
-) -> None:
-    """Write one CategoryFact row per matching tag category (idempotent via unique constraint)."""
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
-    seen_categories: set[str] = set()
-    numeric_value, unit = _extract_amount(content)
-    item_name = _item_name_from_content(content)
-
-    for tag in tags:
-        category = _TAG_TO_CATEGORY.get(tag.lower().strip())
-        if not category or category in seen_categories:
-            continue
-        seen_categories.add(category)
-        try:
-            stmt = (
-                sqlite_insert(CategoryFact)
-                .values(
-                    user_id=user_id,
-                    category=category,
-                    item_name=item_name,
-                    numeric_value=numeric_value,
-                    unit=unit,
-                    date=memory.event_at,
-                    source_memory_id=memory.id,
-                )
-                .on_conflict_do_nothing()  # unique(user_id, category, source_memory_id)
-            )
-            await session.execute(stmt)
-        except Exception:
-            log.debug("category_fact upsert skipped for memory %s category %s", memory.id, category)
+from .tags import normalize_subjects, normalize_tags
 
 log = logging.getLogger(__name__)
 
@@ -126,65 +43,78 @@ async def _upsert_instances(
     memory: Memory,
     instances: list[InstanceItem],
 ) -> None:
-    """Write one Instance row per extracted instance (idempotent via unique constraint)."""
-    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    """Write one Instance row per extracted instance (idempotent via unique constraint).
 
-    for inst in instances:
-        try:
-            stmt = (
-                sqlite_insert(Instance)
-                .values(
-                    user_id=user_id,
-                    category=inst.category,
-                    instance_key=inst.instance_key,
-                    display_name=inst.display_name,
-                    status=inst.status,
-                    date=inst.date or memory.event_at,
-                    numeric_value=inst.numeric_value,
-                    unit=inst.unit,
-                    source_memory_id=memory.id,
-                )
-                .on_conflict_do_nothing()
-            )
-            await session.execute(stmt)
-        except Exception:
-            log.debug("instance upsert skipped for memory %s instance %s", memory.id, inst.instance_key)
+    Not wrapped in a try/except: a failed write here means the counts would be
+    wrong, so the whole save rolls back and the error surfaces.
 
-
-async def _find_instance_duplicate(
-    session: AsyncSession, data: MemoryCreate,
-) -> Memory | None:
-    """For instance-bearing memories, check if any Instance with the same
-    (user, category, instance_key) already exists within the same calendar day.
-    If so, return the source memory — the newer prose will supersede it.
+    The same ``instance_key`` seen again under another memory is a new row, not
+    a merge: each row is one mention with its own status and date, and
+    aggregation groups rows by key. Matching keys never retire prose either —
+    two bike repairs keyed ``bike-repair`` are two memories.
     """
-    if not data.instances:
-        return None
-    for inst in data.instances:
-        existing = await session.scalar(
-            select(Instance).where(
-                Instance.user_id == data.user_id,
-                Instance.category == inst.category,
-                Instance.instance_key == inst.instance_key,
-            ).limit(1)
+    for inst in instances:
+        stmt = (
+            insert(Instance)
+            .values(
+                user_id=user_id,
+                kind=inst.kind,
+                subject=inst.subject,
+                instance_key=inst.instance_key,
+                display_name=inst.display_name,
+                status=inst.status,
+                date=inst.date or memory.event_at,
+                numeric_value=inst.numeric_value,
+                unit=inst.unit,
+                source_memory_id=memory.id,
+            )
+            .on_conflict_do_nothing()
         )
-        if existing:
-            source = await session.scalar(
-                select(Memory).where(
-                    Memory.id == existing.source_memory_id,
-                    Memory.is_active.is_(True),
+        await session.execute(stmt)
+
+
+async def _repoint_instances(
+    session: AsyncSession, user_id: str, retired_ids: list[str], new_id: str
+) -> None:
+    """Move the Instance rows of retired memories onto the memory that replaced them.
+
+    Without this, a superseded memory takes its instances' evidence with it
+    (aggregation only cites active memories). Where the new memory already has
+    a row for the same (kind, subject, key), the new row wins and the old one goes.
+    """
+    rows = (
+        await session.scalars(
+            select(Instance).where(
+                Instance.user_id == user_id, Instance.source_memory_id.in_(retired_ids)
+            )
+        )
+    ).all()
+    if not rows:
+        return
+    taken = set(
+        (
+            await session.execute(
+                select(Instance.kind, Instance.subject, Instance.instance_key).where(
+                    Instance.user_id == user_id, Instance.source_memory_id == new_id
                 )
             )
-            if source:
-                return source
-    return None
+        ).all()
+    )
+    for row in rows:
+        identity = (row.kind, row.subject, row.instance_key)
+        if identity in taken:
+            await session.delete(row)
+        else:
+            row.source_memory_id = new_id
+            taken.add(identity)
+    await session.flush()
 
 
 def _slot_key(value: datetime | None) -> str | None:
     """Normalise an event time for same-slot comparison.
 
-    SQLite may hand back a naive datetime; treat naive as UTC so it still
-    compares correctly against the timezone-aware values we store.
+    A naive datetime (from a caller) is treated as UTC so it still compares
+    correctly against the timezone-aware values we store.
     """
     if value is None:
         return None
@@ -267,6 +197,16 @@ async def save_memory(
             )
         })
 
+    if data.instances:
+        subjects = await normalize_subjects(
+            llm, db, data.user_id, [inst.subject for inst in data.instances],
+            config.tag_similarity_threshold,
+        )
+        data = data.model_copy(update={"instances": [
+            inst.model_copy(update={"subject": subject})
+            for inst, subject in zip(data.instances, subjects)
+        ]})
+
     content_hash = hashlib.sha256(data.content.lower().encode("utf-8")).hexdigest()
 
     # 1. Exact duplicate? Answer before paying for an embedding.
@@ -291,9 +231,13 @@ async def save_memory(
     # lost dedup race rolls back cleanly and the winner can be returned.
     try:
         async with db.session_scope() as session:
-            near = await _find_instance_duplicate(session, data)
-            if near is None:
-                near = await _find_near_duplicate(session, db, llm, config, data, vector)
+            # The memory's user row must exist first (Postgres enforces the foreign key).
+            await session.execute(
+                insert(User)
+                .values(id=data.user_id, name=data.user_id, timezone=config.default_timezone)
+                .on_conflict_do_nothing()
+            )
+            near = await _find_near_duplicate(session, db, llm, config, data, vector)
             memory = Memory(
                 user_id=data.user_id,
                 kind=data.kind,
@@ -310,11 +254,6 @@ async def save_memory(
             )
             session.add(memory)
             await session.flush()
-
-            await db.keywords.add(session, memory.id, memory.content)
-
-            if data.tags:
-                await _upsert_category_facts(session, data.user_id, memory, data.tags, data.content)
 
             if data.instances:
                 await _upsert_instances(session, data.user_id, memory, data.instances)
@@ -333,8 +272,7 @@ async def save_memory(
                     .where(Memory.id.in_(retired_ids), Memory.user_id == data.user_id)
                     .values(is_active=False, superseded_by_id=memory.id)
                 )
-                for rid in retired_ids:
-                    await db.keywords.remove(session, rid)
+                await _repoint_instances(session, data.user_id, retired_ids, memory.id)
     except IntegrityError:
         # Lost a race with an identical save: return the winner instead of crashing.
         log.debug("dedup race on '%s…'; returning the existing row", data.content[:40])
@@ -367,7 +305,11 @@ async def get_memory(db: Database, memory_id: str, user_id: str) -> Memory | Non
 
 
 async def forget_memory(db: Database, config: MemoryConfig, user_id: str, memory_id: str) -> bool:
-    """Soft delete: the row stays for audit but is never retrieved again."""
+    """Soft delete: the row stays for audit but is never retrieved again.
+
+    Its Instance rows are hard-deleted, so a forgotten thing stops being
+    counted (the Memory row remains as the audit record).
+    """
     async with db.session_scope() as session:
         result = await session.execute(
             update(Memory)
@@ -375,14 +317,18 @@ async def forget_memory(db: Database, config: MemoryConfig, user_id: str, memory
             .values(is_active=False)
         )
         if result.rowcount:
-            await db.keywords.remove(session, memory_id)
+            await session.execute(
+                delete(Instance).where(
+                    Instance.user_id == user_id, Instance.source_memory_id == memory_id
+                )
+            )
             if config.enable_entities:
                 await prune_orphaned_entities(session, user_id)
         return result.rowcount > 0
 
 
 async def list_memories(
-    db: Database, user_id: str, *, active_only: bool = True, limit: int = 100
+    db: Database, user_id: str, *, active_only: bool = True, limit: int = 100, offset: int = 0
 ) -> list[Memory]:
     """Newest first. For admin views and debugging; not part of recall."""
     async with db.session_scope() as session:
@@ -390,5 +336,7 @@ async def list_memories(
         if active_only:
             stmt = stmt.where(Memory.is_active.is_(True))
         return list(
-            (await session.scalars(stmt.order_by(Memory.created_at.desc()).limit(limit))).all()
+            (await session.scalars(
+                stmt.order_by(Memory.created_at.desc(), Memory.id).limit(limit).offset(offset)
+            )).all()
         )

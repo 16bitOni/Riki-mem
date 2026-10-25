@@ -8,6 +8,7 @@ Paper:   "LongMemEval: Benchmarking Chat Assistants on Long-Term
           Interactive Memory" (ICLR 2025)
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -66,6 +67,8 @@ class Question:
     category: str
     question_date: str
     evidence_session_ids: list[str]
+    # This question's own history (its haystack), in dataset order.
+    session_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -84,8 +87,6 @@ class QuestionResult:
     hit: bool
     reciprocal_rank: float
     all_retrieved_contents: list[str] = field(default_factory=list)
-    set_recall: float = 0.0
-    answer_accuracy: bool = False
 
 # ---------------------------------------------------------------------------
 # .env loader (no external deps)
@@ -131,7 +132,17 @@ def build_memory(env: dict[str, str], **config_overrides):
         embedding_model=env_get(env, "RIKI_EMBEDDING_MODEL", "text-embedding-3-small"),
     )
 
-    db_url = env_get(env, "RIKI_DB_URL", "sqlite+aiosqlite:///longeval/eval.db")
+    cache_dir = env_get(env, "RIKI_LLM_CACHE", "longeval/cache")
+    if cache_dir and cache_dir.lower() != "off":
+        from cache import CachingProvider
+
+        llm = CachingProvider(
+            llm, cache_dir,
+            chat_model=env_get(env, "RIKI_CHAT_MODEL", "gpt-4o-mini"),
+            fast_model=env_get(env, "RIKI_FAST_MODEL", "gpt-4o-mini"),
+        )
+
+    db_url = env_get(env, "RIKI_DB_URL", "postgresql://riki:riki@localhost:5433/riki")
 
     return RikiMemory(database_url=db_url, llm=llm, config=MemoryConfig(**config_overrides))
 
@@ -252,9 +263,11 @@ def parse_dataset(raw: list[dict], limit: int | None = None) -> Dataset:
         if isinstance(haystack, str):
             haystack = json.loads(haystack)
 
+        own_sessions: list[str] = []
         for idx, sess_turns in enumerate(haystack):
             sid = str(session_ids[idx]) if idx < len(session_ids) else f"{qid}_s{idx}"
             if sid in sessions:
+                own_sessions.append(sid)
                 continue
             s_date = session_dates[idx] if idx < len(session_dates) else ""
 
@@ -274,6 +287,7 @@ def parse_dataset(raw: list[dict], limit: int | None = None) -> Dataset:
                 continue
 
             sessions[sid] = Session(session_id=sid, date=s_date, turns=turns)
+            own_sessions.append(sid)
 
         evidence_ids = (
             row.get("answer_session_ids")
@@ -291,6 +305,7 @@ def parse_dataset(raw: list[dict], limit: int | None = None) -> Dataset:
             category=category,
             question_date=q_date,
             evidence_session_ids=[str(x) for x in evidence_ids],
+            session_ids=own_sessions,
         ))
 
     return Dataset(sessions=sessions, questions=questions)
@@ -324,7 +339,7 @@ async def ingest_sessions(
     sessions: dict[str, Session],
     progress_fn: ProgressFn | None = None,
 ) -> dict:
-    """Feed conversation sessions into riki-memory via remember()."""
+    """Feed conversation sessions into riki-memory via remember(), one turn at a time."""
     total_pairs = sum(len(s.turns) // 2 for s in sessions.values())
     ingested = 0
     errors = 0
@@ -354,8 +369,8 @@ async def ingest_sessions(
                 log.warning("ingest error session=%s turn=%d: %s", sid, i, e)
                 errors += 1
 
-            if progress_fn:
-                progress_fn(ingested + errors, total_pairs, sid)
+        if progress_fn:
+            progress_fn(ingested + errors, total_pairs, sid)
 
         try:
             ep = await memory.close_session(
@@ -400,27 +415,6 @@ def score_substring(answers: list[str], retrieved: list[str]) -> tuple[bool, flo
             if words and words.issubset(_answer_words(content)):
                 return True, 1.0 / rank
     return False, 0.0
-
-
-def score_set_recall(answers: list[str], all_retrieved: list[str]) -> float:
-    """Fraction of expected answers found anywhere in the full returned set.
-
-    For aggregation questions the gold answer may be spread across multiple
-    memories (e.g. 4 different instrument mentions).  This metric checks
-    coverage regardless of rank — a complete set in any order counts as 1.0.
-    """
-    if not answers:
-        return 0.0
-    found = 0
-    for a in answers:
-        a_low = a.lower()
-        a_words = _answer_words(a)
-        for content in all_retrieved:
-            c_low = content.lower()
-            if a_low in c_low or (a_words and a_words.issubset(_answer_words(content))):
-                found += 1
-                break
-    return found / len(answers)
 
 
 async def score_llm_judge(
@@ -495,73 +489,107 @@ async def score_llm_judge(
 # Query + evaluate
 # ---------------------------------------------------------------------------
 
-async def run_questions(
-    memory,
-    user_id: str,
-    questions: list[Question],
-    judge: str = "substring",
-    progress_fn: ProgressFn | None = None,
-) -> list[QuestionResult]:
-    results: list[QuestionResult] = []
+async def score_question(memory, user_id: str, q: Question, judge: str = "substring") -> QuestionResult:
+    """Ask one question of its own user's memory and score the answer."""
+    # Parse question_date into a datetime upper bound so retrieval excludes
+    # memories that post-date when the question was actually asked.
+    not_after: datetime | None = None
+    if q.question_date:
+        import re as _re
+        from datetime import timezone as _tz
+        # Dataset format: "2023/02/20 (Mon) 22:35" — strip the day-of-week token
+        # then try a few common formats.
+        clean = _re.sub(r"\s*\([A-Za-z]+\)\s*", " ", q.question_date).strip()
+        for fmt in ("%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                not_after = datetime.strptime(clean[:len(fmt) + 2], fmt).replace(tzinfo=_tz.utc)
+                break
+            except ValueError:
+                continue
 
-    for idx, q in enumerate(questions):
-        # Parse question_date into a datetime upper bound so retrieval excludes
-        # memories that post-date when the question was actually asked.
-        not_after: datetime | None = None
-        if q.question_date:
-            import re as _re
-            from datetime import timezone as _tz
-            # Dataset format: "2023/02/20 (Mon) 22:35" — strip the day-of-week token
-            # then try a few common formats.
-            clean = _re.sub(r"\s*\([A-Za-z]+\)\s*", " ", q.question_date).strip()
-            for fmt in ("%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-                try:
-                    not_after = datetime.strptime(clean[:len(fmt) + 2], fmt).replace(tzinfo=_tz.utc)
-                    break
-                except ValueError:
-                    continue
+    try:
+        found, _report = await memory.recall(
+            user_id=user_id, query=q.question, not_after=not_after,
+        )
+        all_retrieved = [m.content for m in found]
+    except Exception as e:
+        log.warning("recall error q=%s: %s", q.question_id, e)
+        all_retrieved = []
 
-        try:
-            found, _report = await memory.recall(
-                user_id=user_id, query=q.question, not_after=not_after,
-            )
-            all_retrieved = [m.content for m in found]
-        except Exception as e:
-            log.warning("recall error q=%s: %s", q.question_id, e)
-            all_retrieved = []
-
-        if judge == "llm":
+    if judge == "llm":
+        hit, rr = await score_llm_judge(
+            memory.llm, q.question, q.answers, all_retrieved, question_date=q.question_date,
+        )
+    elif judge == "combined":
+        hit, rr = score_substring(q.answers, all_retrieved)
+        if not hit:
             hit, rr = await score_llm_judge(
                 memory.llm, q.question, q.answers, all_retrieved, question_date=q.question_date,
             )
-        elif judge == "combined":
-            hit, rr = score_substring(q.answers, all_retrieved)
-            if not hit:
-                hit, rr = await score_llm_judge(
-                    memory.llm, q.question, q.answers, all_retrieved, question_date=q.question_date,
+    else:
+        hit, rr = score_substring(q.answers, all_retrieved)
+
+    return QuestionResult(
+        question_id=q.question_id,
+        category=q.category,
+        question=q.question,
+        expected_answers=q.answers,
+        retrieved_contents=all_retrieved[:5],
+        hit=hit,
+        reciprocal_rank=rr,
+        all_retrieved_contents=all_retrieved,
+    )
+
+
+def question_user(prefix: str, q: Question) -> str:
+    """Each question gets its own memory: LongMemEval gives every question its own history."""
+    return f"{prefix}:{q.question_id}"
+
+
+async def run_benchmark(
+    memory,
+    dataset: Dataset,
+    judge: str = "substring",
+    concurrency: int = 8,
+    skip_ingest: bool = False,
+    user_prefix: str = "longeval",
+    progress_fn: ProgressFn | None = None,
+) -> tuple[list[QuestionResult], dict]:
+    """Ingest each question's own sessions into its own user, then ask it.
+
+    Questions are independent, so up to ``concurrency`` run at once; inside a
+    question, turns stay in order (extraction sees what earlier turns saved).
+    Results come back in dataset order.
+    """
+    gate = asyncio.Semaphore(concurrency)
+    totals = {"ingested": 0, "errors": 0, "sessions": 0, "episodes": 0}
+    done = 0
+    t0 = time.time()
+
+    async def one(q: Question) -> QuestionResult:
+        nonlocal done
+        async with gate:
+            user_id = question_user(user_prefix, q)
+            if not skip_ingest:
+                # oldest first, so "later" mentions update earlier ones
+                ordered = sorted(
+                    q.session_ids,
+                    key=lambda sid: _parse_session_date(dataset.sessions[sid].date) or datetime.min,
                 )
-        else:
-            hit, rr = score_substring(q.answers, all_retrieved)
-
-        sr = score_set_recall(q.answers, all_retrieved)
-
-        results.append(QuestionResult(
-            question_id=q.question_id,
-            category=q.category,
-            question=q.question,
-            expected_answers=q.answers,
-            retrieved_contents=all_retrieved[:5],
-            hit=hit,
-            reciprocal_rank=rr,
-            all_retrieved_contents=all_retrieved,
-            set_recall=sr,
-            answer_accuracy=hit,
-        ))
-
+                sessions = {sid: dataset.sessions[sid] for sid in ordered}
+                stats = await ingest_sessions(memory, user_id, sessions)
+                for key in totals:
+                    totals[key] += stats.get(key, 0)
+            result = await score_question(memory, user_id, q, judge)
+        done += 1
         if progress_fn:
-            progress_fn(idx + 1, len(questions), q.category)
+            progress_fn(done, len(dataset.questions), q.category)
+        return result
 
-    return results
+    results = await asyncio.gather(*(one(q) for q in dataset.questions))
+    totals["elapsed_s"] = round(time.time() - t0, 1)
+    return list(results), totals
+
 
 # ---------------------------------------------------------------------------
 # Aggregation
@@ -578,8 +606,6 @@ def aggregate(results: list[QuestionResult]) -> dict:
             "count": len(items),
             "hit_rate": round(sum(1 for r in items if r.hit) / n, 3),
             "mrr": round(sum(r.reciprocal_rank for r in items) / n, 3),
-            "set_recall": round(sum(r.set_recall for r in items) / n, 3),
-            "answer_accuracy": round(sum(1 for r in items if r.answer_accuracy) / n, 3),
         }
 
     report = {"overall": metrics(results), "by_category": {}}
@@ -597,14 +623,12 @@ def format_report(report: dict, results: list[QuestionResult], verbose: bool = F
     lines.append(f"  Questions      : {overall['count']}")
     lines.append(f"  Hit Rate       : {overall['hit_rate']:.1%}")
     lines.append(f"  MRR            : {overall['mrr']:.3f}")
-    lines.append(f"  Set Recall     : {overall['set_recall']:.1%}")
-    lines.append(f"  Answer Accuracy: {overall['answer_accuracy']:.1%}")
     lines.append("-" * 60)
 
     for cat, m in report["by_category"].items():
         lines.append(
             f"  {cat:<30s}  n={m['count']:>3d}  hit={m['hit_rate']:.1%}"
-            f"  mrr={m['mrr']:.3f}  sr={m['set_recall']:.1%}"
+            f"  mrr={m['mrr']:.3f}"
         )
 
     if verbose:

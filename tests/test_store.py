@@ -90,9 +90,9 @@ async def test_graph_search_walks_relations(memory):
     assert len(ids) == 1
 
 
-async def test_entities_can_be_disabled(tmp_path, provider):
+async def test_entities_can_be_disabled(db_url, provider):
     mem = RikiMemory(
-        database_url=f"sqlite+aiosqlite:///{tmp_path}/noent.db",
+        database_url=db_url,
         llm=provider,
         config=MemoryConfig(enable_entities=False),
     )

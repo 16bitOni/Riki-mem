@@ -106,10 +106,10 @@ class StubPlanner(FakeProvider):
 
 
 @pytest.fixture
-async def escalating(tmp_path):
+async def escalating(db_url):
     provider = StubPlanner(RetrievalPlan(needs_memory=False))
     mem = RikiMemory(
-        database_url=f"sqlite+aiosqlite:///{tmp_path}/esc.db",
+        database_url=db_url,
         llm=provider,
         config=MemoryConfig(planner_mode="escalate"),
     )
@@ -137,11 +137,11 @@ async def test_escalate_falls_back_to_llm_on_miss(escalating):
     assert provider.plans == 1  # exactly one planner call, only because heuristic whiffed
 
 
-async def test_heuristic_mode_never_calls_llm(tmp_path):
+async def test_heuristic_mode_never_calls_llm(db_url):
     from riki_memory.llm import NullProvider  # raises on any model call
 
     mem = RikiMemory(
-        database_url=f"sqlite+aiosqlite:///{tmp_path}/heur.db",
+        database_url=db_url,
         llm=NullProvider(),
         config=MemoryConfig(planner_mode="heuristic"),
     )

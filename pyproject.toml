@@ -1,7 +1,7 @@
 [project]
 name = "Riki-mem"
 version = "0.1.0"
-description = "Standalone long-term memory layer for AI agents: LLM extraction, hybrid retrieval (keyword + semantic + time + graph), dedup, and consolidation. SQLite by default, bring your own LLM."
+description = "Standalone long-term memory layer for AI agents: LLM extraction, hybrid retrieval (keyword + semantic + time + graph), dedup, and consolidation. Postgres + pgvector, bring your own LLM."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -14,7 +14,9 @@ classifiers = [
 ]
 dependencies = [
     "sqlalchemy[asyncio]>=2.0",
-    "aiosqlite>=0.19",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "pgvector>=0.3",
     "pydantic>=2.0",
     "httpx>=0.27",
     "tzdata>=2024.1; sys_platform == 'win32'",
@@ -22,12 +24,6 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/16bitOni/Riki"
-
-[project.optional-dependencies]
-# Faster vector math if you outgrow the pure-python cosine similarity.
-numpy = ["numpy>=1.26"]
-# Postgres / Neon / RDS support (asyncpg driver + tsvector keyword engine).
-postgres = ["asyncpg>=0.29"]
 
 [build-system]
 requires = ["hatchling"]

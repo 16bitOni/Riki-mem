@@ -17,6 +17,17 @@ def test_trigram_orders_correctly():
     assert 0.0 <= far <= 1.0
 
 
+def test_trigram_ignores_punctuation():
+    assert trigram_similarity("Paris.", "Paris!") == 1.0
+    assert trigram_similarity("My sister lives in Paris.", "my sister lives in paris") == 1.0
+    assert trigram_similarity("re-booked", "re booked") == 1.0
+
+
+def test_trigram_matches_pg_trgm():
+    # the worked example in the pg_trgm docs: similarity('word', 'two words') = 0.363636
+    assert abs(trigram_similarity("word", "two words") - 4 / 11) < 1e-9
+
+
 def test_trigram_empty():
     assert trigram_similarity("", "") == 1.0
     assert trigram_similarity("something", "") == 0.0

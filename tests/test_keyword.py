@@ -1,29 +1,10 @@
-"""Keyword backend selection and the Postgres query shape.
-
-No live Postgres is available in CI, so the Postgres side is verified by
-compiling the generated SQL against the Postgres dialect (catches bad
-function names, bad operators, bad quoting). The SQLite side is covered by
-test_store.py's keyword tests, which now run through the same dispatcher.
-"""
+"""The Postgres keyword query: its shape, and that it compiles to valid Postgres SQL."""
 
 from datetime import datetime, timezone
 
 from sqlalchemy.dialects import postgresql
 
-from riki_memory import PostgresTSIndex, SQLiteFTSIndex, select_keyword_index
-from riki_memory.keyword import build_fts_query
-
-
-def test_backend_selection_by_url():
-    assert isinstance(select_keyword_index("sqlite+aiosqlite:///m.db"), SQLiteFTSIndex)
-    assert isinstance(select_keyword_index("sqlite+aiosqlite:///:memory:"), SQLiteFTSIndex)
-    assert isinstance(select_keyword_index("postgresql+asyncpg://u:p@host/db"), PostgresTSIndex)
-    assert isinstance(select_keyword_index("postgresql://u:p@host/db"), PostgresTSIndex)
-
-
-def test_backend_names():
-    assert SQLiteFTSIndex().name == "sqlite-fts5"
-    assert PostgresTSIndex().name == "postgres-tsvector"
+from riki_memory.keyword import build_fts_query, keyword_search_stmt
 
 
 def test_fts_query_shape():
@@ -35,7 +16,7 @@ def test_fts_query_shape():
 
 
 def test_postgres_search_sql_compiles():
-    stmt = PostgresTSIndex()._search_stmt(
+    stmt = keyword_search_stmt(
         "u1",
         ["riya", "zerodha"],
         datetime(2026, 1, 1, tzinfo=timezone.utc),
@@ -51,5 +32,4 @@ def test_postgres_search_sql_compiles():
 
 def test_postgres_search_empty_keywords_compiles():
     # empty keywords must not produce a MATCH against NULL
-    index = PostgresTSIndex()
     assert build_fts_query([]) is None

@@ -39,6 +39,15 @@ class MemoryConfig(BaseModel):
         "existing canonical tag at write time, and for expanding query tags to "
         "semantically similar tags at read time. Lower = more aggressive merging.",
     )
+    subject_match_threshold: float = Field(
+        0.4, ge=0.1, le=1,
+        description="Cosine similarity at which a stored instance subject becomes a candidate "
+        "for a counting question's noun when no word matches ('instruments' -> 'guitar'). "
+        "One fast LLM call then keeps only real members, so this is set low for recall. "
+        "0.40 is calibrated for amazon.titan-embed-text-v1 (96% of members kept; 0.98 "
+        "precision after the LLM step). Other models score on other scales: run "
+        "longeval/calibrate_subjects.py after changing embedding model.",
+    )
     importance_weight: float = Field(
         0.05, ge=0, le=0.3, description="Small boost per importance point above 3."
     )
@@ -59,6 +68,11 @@ class MemoryConfig(BaseModel):
     consolidation_similarity_threshold: float = Field(0.8, ge=0.5, le=0.99)
     profile_refresh_after: int = Field(
         10, ge=1, description="Rebuild the user profile after this many new memories."
+    )
+    empty_write_warning_after: int = Field(
+        25, ge=0,
+        description="Log a warning after this many writes in a row propose no memories "
+        "without any error: the sign that the model's replies are not being understood. 0 = never.",
     )
 
     # -- standalone behaviour ------------------------------------------------

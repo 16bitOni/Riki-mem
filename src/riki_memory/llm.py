@@ -6,11 +6,17 @@ protocol, and ships one implementation for any OpenAI-compatible endpoint
 local model by implementing the three methods.
 """
 
+import asyncio
 import json
+import logging
+import random
+import re
 from typing import Protocol, TypeVar
 
 import httpx
 from pydantic import BaseModel
+
+from . import telemetry
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -36,12 +42,44 @@ class LLMProvider(Protocol):
         ...
 
 
+_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$")
+
+
+def parse_json_reply(content: str | None, schema: type[BaseModel]) -> object:
+    """The JSON object a model meant to send, undoing the usual wrappers.
+
+    - Markdown fences (```json ... ```).
+    - The ``json_schema`` name used as a wrapper key: DeepSeek and Llama answer
+      ``{"answer": "{...}"}`` (sometimes with the inner object as a string)
+      instead of the object itself. Unwrapped only when the outer object has
+      none of the schema's own fields, so a real field named "answer" is safe.
+    """
+    data = json.loads(_FENCE_RE.sub("", (content or "").strip()))
+    fields = set(schema.model_fields)
+    for _ in range(2):
+        if isinstance(data, dict) and len(data) == 1 and not fields & set(data):
+            data = next(iter(data.values()))
+            if isinstance(data, str):
+                data = json.loads(_FENCE_RE.sub("", data.strip()))
+    return data
+
+
+log = logging.getLogger(__name__)
+
+# Worth another try: rate limits, overload, and gateway errors.
+RETRYABLE_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504, 529})
+
+
 class OpenAICompatibleProvider:
     """``LLMProvider`` over the OpenAI ``/chat/completions`` + ``/embeddings`` HTTP API.
 
     Works with any OpenAI-compatible server. Structured output uses the
     ``json_schema`` response format, so the server must support it
     (OpenAI, xAI, Ollama and most proxies do).
+
+    Rate limits (429), overload and network errors are retried with
+    exponential backoff (honouring ``Retry-After``), up to ``max_retries``
+    times: under load a memory must be delayed, not silently lost.
     """
 
     def __init__(
@@ -52,6 +90,7 @@ class OpenAICompatibleProvider:
         fast_model: str | None = None,
         embedding_model: str = "text-embedding-3-small",
         timeout: float = 120.0,
+        max_retries: int = 6,
     ) -> None:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
@@ -59,6 +98,7 @@ class OpenAICompatibleProvider:
         self._fast_model = fast_model or chat_model
         self._embedding_model = embedding_model
         self._timeout = timeout
+        self._max_retries = max_retries
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -79,15 +119,39 @@ class OpenAICompatibleProvider:
             await self._client.aclose()
             self._client = None
 
-    async def chat_json(self, system: str, user: str, schema: type[M], *, fast: bool = True) -> M:
+    async def _post(self, path: str, body: dict) -> dict:
         client = await self._client_()
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await client.post(path, json=body)
+            except (httpx.TransportError, httpx.TimeoutException) as exc:
+                if attempt == self._max_retries:
+                    raise
+                wait = _backoff(attempt, None)
+                log.warning("%s failed (%s); retry %d in %.1fs", path, type(exc).__name__, attempt + 1, wait)
+            else:
+                if response.status_code not in RETRYABLE_STATUS or attempt == self._max_retries:
+                    response.raise_for_status()
+                    data = response.json()
+                    if path == "/embeddings":
+                        telemetry.record_embed_call()
+                    else:
+                        usage = data.get("usage") or {}
+                        telemetry.record_model_call(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                    return data
+                wait = _backoff(attempt, response.headers.get("retry-after"))
+                log.warning("%s returned %d; retry %d in %.1fs", path, response.status_code, attempt + 1, wait)
+            await asyncio.sleep(wait)
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    async def chat_json(self, system: str, user: str, schema: type[M], *, fast: bool = True) -> M:
         # Pydantic v2 emits a strict JSON schema; most OpenAI-compatible servers accept it.
         json_schema = schema.model_json_schema()
         # `additionalProperties: false` breaks some servers; the schema is advisory, not a contract.
         json_schema.pop("additionalProperties", None)
-        response = await client.post(
+        data = await self._post(
             "/chat/completions",
-            json={
+            {
                 "model": self._fast_model if fast else self._chat_model,
                 "messages": [
                     {"role": "system", "content": system},
@@ -100,15 +164,13 @@ class OpenAICompatibleProvider:
                 },
             },
         )
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        return schema.model_validate(json.loads(content))
+        content = data["choices"][0]["message"]["content"]
+        return schema.model_validate(parse_json_reply(content, schema))
 
     async def chat_text(self, system: str, user: str, *, fast: bool = True) -> str:
-        client = await self._client_()
-        response = await client.post(
+        data = await self._post(
             "/chat/completions",
-            json={
+            {
                 "model": self._fast_model if fast else self._chat_model,
                 "messages": [
                     {"role": "system", "content": system},
@@ -117,16 +179,21 @@ class OpenAICompatibleProvider:
                 "temperature": 0,
             },
         )
-        response.raise_for_status()
-        return (response.json()["choices"][0]["message"]["content"] or "").strip()
+        return (data["choices"][0]["message"]["content"] or "").strip()
 
     async def embed(self, text: str) -> list[float]:
-        client = await self._client_()
-        response = await client.post(
-            "/embeddings", json={"model": self._embedding_model, "input": text}
-        )
-        response.raise_for_status()
-        return [float(x) for x in response.json()["data"][0]["embedding"]]
+        data = await self._post("/embeddings", {"model": self._embedding_model, "input": text})
+        return [float(x) for x in data["data"][0]["embedding"]]
+
+
+def _backoff(attempt: int, retry_after: str | None) -> float:
+    """Seconds to wait: the server's ``Retry-After`` if it gave one, else 1, 2, 4 ... 30 with jitter."""
+    if retry_after:
+        try:
+            return min(60.0, max(0.0, float(retry_after)))
+        except ValueError:
+            pass
+    return min(30.0, 2.0 ** attempt) * random.uniform(0.75, 1.25)
 
 
 class NullProvider:

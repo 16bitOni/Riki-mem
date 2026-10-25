@@ -4,16 +4,17 @@ import pytest
 from datetime import datetime, timezone
 
 from riki_memory import InstanceItem, MemoryCreate
+from riki_memory.aggregation import AggregationQuery, execute_aggregation
 from riki_memory.models import Instance, Memory
 from riki_memory.store import save_memory
 
 from sqlalchemy import select
 
 
-async def test_instance_dedup_supersedes_old_memory(memory, provider):
-    """When a new memory matches an existing instance_key, the old memory is superseded."""
+async def test_same_instance_key_keeps_both_memories(memory, provider):
+    """A matching instance_key never retires prose; the count still sees one wedding."""
     inst = InstanceItem(
-        category="wedding-attended",
+        kind="event", subject="wedding",
         instance_key="rachel-mike-wedding",
         display_name="Rachel and Mike wedding",
         status="occurred",
@@ -40,11 +41,17 @@ async def test_instance_dedup_supersedes_old_memory(memory, provider):
     mem1 = await save_memory(memory.db, provider, memory.config, data1)
     mem2 = await save_memory(memory.db, provider, memory.config, data2)
 
-    # The second save should supersede the first
     assert mem2.id != mem1.id
     async with memory.db.session_scope() as session:
         old = await session.scalar(select(Memory).where(Memory.id == mem1.id))
-        assert old.is_active is False
+        assert old.is_active is True
+
+    result = await execute_aggregation(
+        memory.db, "u1",
+        AggregationQuery(operation="COUNT_DISTINCT", terms=["wedding"],
+                         status_filter=["occurred"]),
+    )
+    assert result.count == 1
 
 
 async def test_distinct_events_same_day_not_collapsed(memory, provider):
@@ -56,7 +63,7 @@ async def test_distinct_events_same_day_not_collapsed(memory, provider):
         importance=3,
         event_at=datetime(2023, 6, 10, tzinfo=timezone.utc),
         instances=[InstanceItem(
-            category="model-kit",
+            kind="item", subject="model-kit",
             instance_key="b-29-model",
             display_name="B-29 model kit",
             status="occurred",
@@ -69,7 +76,7 @@ async def test_distinct_events_same_day_not_collapsed(memory, provider):
         importance=3,
         event_at=datetime(2023, 6, 10, tzinfo=timezone.utc),
         instances=[InstanceItem(
-            category="model-kit",
+            kind="item", subject="model-kit",
             instance_key="camaro-model",
             display_name="Camaro model kit",
             status="occurred",
@@ -93,7 +100,7 @@ async def test_distinct_events_same_day_not_collapsed(memory, provider):
     # And both instance rows exist with distinct keys
     async with memory.db.session_scope() as session:
         instances = (await session.scalars(
-            select(Instance).where(Instance.user_id == "u1", Instance.category == "model-kit")
+            select(Instance).where(Instance.user_id == "u1", Instance.subject == "model-kit")
         )).all()
 
     keys = {i.instance_key for i in instances}

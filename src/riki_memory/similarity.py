@@ -1,41 +1,39 @@
-"""Portable similarity functions.
+"""In-Python similarity, for comparing a handful of already-loaded rows.
 
-Replaces the two Postgres-only operators the original used:
+Search runs in Postgres (``keyword.py``, ``vectors.py``). These two are for the
+small comparisons around a write: near-duplicate checks against the few
+memories in the same date slot, tag/subject matching, consolidation.
 
-- ``pg_trgm`` ``%`` / ``similarity()`` → :func:`trigram_similarity` (Jaccard over
-  trigram multisets, same padding/normalisation as pg_trgm)
-- ``pgvector`` ``cosine_distance`` → :func:`cosine_similarity` (pure Python;
-  install the ``numpy`` extra if you outgrow it)
-
-The ``dedup_trigram_threshold`` default (0.85) was tuned against pg_trgm;
-Jaccard behaves the same monotonically, so retune only if dedup feels
-too eager or too lax on your data.
+:func:`trigram_similarity` gives the same scores as pg_trgm's ``similarity()``
+(same word splitting and padding), so the ``dedup_trigram_threshold`` default
+(0.85), tuned against pg_trgm, carries over unchanged.
 """
 
-from collections import Counter
+import re
 from math import sqrt
 
+# pg_trgm: anything that is not a letter or digit separates words, so
+# "Paris." and "Paris!" are the same word.
+_WORD_RE = re.compile(r"[^\W_]+")
 
-def trigrams(text: str) -> Counter:
-    """Lower-cased, space-padded trigram multiset, pg_trgm style."""
-    counts: Counter = Counter()
-    for word in text.lower().split():
-        padded = f"  {word}  "
-        for i in range(len(padded) - 2):
-            counts[padded[i : i + 3]] += 1
-    return counts
+
+def trigrams(text: str) -> set[str]:
+    """Lower-cased trigram set, pg_trgm style: two spaces before each word, one after."""
+    grams: set[str] = set()
+    for word in _WORD_RE.findall(text.lower()):
+        padded = f"  {word} "
+        grams.update(padded[i : i + 3] for i in range(len(padded) - 2))
+    return grams
 
 
 def trigram_similarity(a: str, b: str) -> float:
-    """0 (nothing alike) … 1 (identical), Jaccard over trigram multisets."""
-    ca, cb = trigrams(a), trigrams(b)
-    if not ca and not cb:
+    """0 (nothing alike) … 1 (identical), Jaccard over trigram sets."""
+    ga, gb = trigrams(a), trigrams(b)
+    if not ga and not gb:
         return 1.0
-    if not ca or not cb:
+    if not ga or not gb:
         return 0.0
-    shared = sum((ca & cb).values())
-    total = sum(ca.values()) + sum(cb.values()) - shared
-    return shared / total if total else 1.0
+    return len(ga & gb) / len(ga | gb)
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

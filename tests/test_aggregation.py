@@ -38,7 +38,7 @@ def test_parse_aggregation_query_with_tags():
     q = parse_aggregation_query("How many weddings have I attended?", plan)
     assert q is not None
     assert q.operation == "COUNT_DISTINCT"
-    assert "wedding" in q.category
+    assert "weddings" in q.terms
 
 
 def test_parse_aggregation_query_non_agg():
@@ -60,7 +60,7 @@ async def test_count_distinct_instances(memory, provider):
             kind="event",
             importance=3,
             instances=[InstanceItem(
-                category="wedding-attended",
+                kind="event", subject="wedding",
                 instance_key=f"{name.lower()}-wedding",
                 display_name=f"{name} wedding",
                 status="occurred",
@@ -71,7 +71,7 @@ async def test_count_distinct_instances(memory, provider):
 
     query = AggregationQuery(
         operation="COUNT_DISTINCT",
-        category="wedding-attended",
+        terms=["wedding"],
         status_filter=["occurred"],
     )
     result = await execute_aggregation(memory.db, "u1", query)
@@ -89,7 +89,7 @@ async def test_sum_instances(memory, provider):
             kind="event",
             importance=3,
             instances=[InstanceItem(
-                category="bike-expense",
+                kind="money", subject="bike-expense",
                 instance_key=f"bike-{name}",
                 display_name=name,
                 status="occurred",
@@ -101,7 +101,7 @@ async def test_sum_instances(memory, provider):
 
     query = AggregationQuery(
         operation="SUM",
-        category="bike-expense",
+        terms=["bike-expense"],
         status_filter=["occurred"],
     )
     result = await execute_aggregation(memory.db, "u1", query)
@@ -116,7 +116,7 @@ async def test_status_filter_excludes_planned(memory, provider):
         kind="event",
         importance=3,
         instances=[InstanceItem(
-            category="movie-festival",
+            kind="event", subject="film-festival",
             instance_key="holiday-market-2023",
             display_name="Holiday Market 2023",
             status="occurred",
@@ -128,7 +128,7 @@ async def test_status_filter_excludes_planned(memory, provider):
         kind="event",
         importance=3,
         instances=[InstanceItem(
-            category="movie-festival",
+            kind="event", subject="film-festival",
             instance_key="sundance-2024",
             display_name="Sundance 2024",
             status="planned",
@@ -139,7 +139,7 @@ async def test_status_filter_excludes_planned(memory, provider):
 
     query = AggregationQuery(
         operation="COUNT_DISTINCT",
-        category="movie-festival",
+        terms=["film-festival"],
         status_filter=["occurred"],
     )
     result = await execute_aggregation(memory.db, "u1", query)
@@ -150,7 +150,7 @@ async def test_empty_instances_returns_zero(memory, provider):
     """No matching instances returns count 0."""
     query = AggregationQuery(
         operation="COUNT_DISTINCT",
-        category="wedding-attended",
+        terms=["wedding"],
         status_filter=["occurred"],
     )
     result = await execute_aggregation(memory.db, "u1", query)

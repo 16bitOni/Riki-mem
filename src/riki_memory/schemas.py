@@ -11,7 +11,9 @@ import logging
 from datetime import datetime
 from typing import Annotated, Literal, get_args
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
+
+from . import telemetry
 
 log = logging.getLogger(__name__)
 
@@ -68,8 +70,8 @@ class RetrievalPlan(BaseModel):
     )
     tags: list[str] = Field(
         default_factory=list,
-        description="Topic/category tags to search for (e.g. ['wedding', 'purchase', 'doctor-visit']). "
-        "Use these for counting or aggregation questions ('how many X', 'total', 'all my').",
+        description="Topic tags to search for (e.g. ['wedding', 'doctor']). For counting or "
+        "aggregation questions ('how many X', 'total', 'all my') put the noun being counted first.",
     )
     start: datetime | None = Field(
         default=None, description="Start of the time window the question refers to, if any."
@@ -121,68 +123,89 @@ class RelationMention(BaseModel):
     target: Name
 
 
-class NewMemory(BaseModel):
-    """A memory as proposed by the extraction LLM."""
-
-    content: str = Field(description="One self-contained sentence, understandable without the chat.")
-    kind: MemoryKind = Field(
-        description="Exactly one of: fact, preference, event, episode. "
-        "Future plans and commitments are 'event' (with event_at) or 'fact' if undated."
-    )
-    importance: int = Field(description="1 = trivia ... 5 = core to who the user is.")
-    event_at: datetime | None = Field(
-        default=None, description="When it happened or will happen, if it is tied to a date."
-    )
-    semantic: bool = Field(
-        description="True for opinions, feelings, preferences, ideas. False for names, dates, numbers."
-    )
-    entities: list[EntityMention] = Field(default_factory=list)
-    relations: list[RelationMention] = Field(default_factory=list)
-    tags: list[str] = Field(
-        default_factory=list,
-        description="2-5 short lowercase topic/category labels describing what this memory "
-        "is about. Examples: wedding, purchase, doctor-visit, hobby, travel, cooking, "
-        "fitness, work, family, pet, finance, home-improvement, streaming, gaming.",
-    )
-    replaces: list[str] = Field(
-        default_factory=list, description="IDs of known memories this one makes outdated."
-    )
-
-    @field_validator("tags", mode="before")
-    @classmethod
-    def _normalise_tags(cls, values):
-        if not isinstance(values, list):
-            return []
-        return [t.strip().lower().replace(" ", "-") for t in values if isinstance(t, str) and t.strip()][:10]
-
-    @field_validator("kind", mode="before")
-    @classmethod
-    def _coerce_kind(cls, value):
-        """Map kinds the model invents ("plan", "goal", ...) onto the real ones instead of failing."""
-        if not isinstance(value, str):
-            return value
-        key = value.strip().lower()
-        return KIND_ALIASES.get(key, key if key in get_args(MemoryKind) else "fact")
-
-
 InstanceStatus = Literal["occurred", "planned", "desired", "former", "current"]
 
-INSTANCE_CATEGORIES = [
-    "model-kit", "instrument", "wedding-attended", "doctor-visit", "road-trip",
-    "camping-trip", "bike-expense", "aquarium-fish", "fish-tank", "health-device",
-    "charity-event", "property-viewed", "game-played", "movie-festival", "citrus",
-    "baby-born", "art-event", "pet", "vehicle", "subscription", "appliance",
-    "class-taken", "concert-attended", "book-read", "recipe-made",
-]
+# Deliberately generic: the domain lives in the free-text ``subject``, so this
+# list never needs to grow for a new kind of question.
+InstanceKind = Literal["event", "item", "visit", "trip", "media", "person", "activity", "money", "other"]
+
+# Kinds the extractor tends to invent, mapped to the closest real one.
+INSTANCE_KIND_ALIASES = {
+    "purchase": "item", "possession": "item", "product": "item", "object": "item", "pet": "item",
+    "attendance": "event", "occasion": "event", "ceremony": "event",
+    "appointment": "visit", "viewing": "visit",
+    "travel": "trip", "journey": "trip",
+    "book": "media", "film": "media", "movie": "media", "show": "media", "game": "media",
+    "relationship": "person", "birth": "person",
+    "session": "activity", "workout": "activity", "class": "activity", "hobby": "activity",
+    "donation": "money", "expense": "money", "payment": "money", "income": "money",
+}
+
+# Units the extractor writes in many spellings, mapped to one canonical form so
+# SUM never treats "$" and "USD" (or "hrs" and "hours") as different units.
+UNIT_ALIASES = {
+    "$": "USD", "usd": "USD", "dollar": "USD", "dollars": "USD", "us$": "USD",
+    "hour": "hours", "hr": "hours", "hrs": "hours", "h": "hours",
+    "minute": "minutes", "min": "minutes", "mins": "minutes",
+    "day": "days", "week": "weeks", "month": "months", "year": "years",
+    "kilometer": "km", "kilometers": "km", "kms": "km",
+    "mile": "miles", "mi": "miles",
+    "item": "count", "items": "count", "piece": "count", "pieces": "count",
+}
+
+
+def _slugify(value: str, max_length: int) -> str:
+    import re
+    slug = value.strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
+    return (slug or value.strip().lower())[:max_length]
+
+
+_IRREGULAR_PLURALS = {
+    "people": "person", "children": "child", "men": "man", "women": "woman",
+    "feet": "foot", "teeth": "tooth", "mice": "mouse", "geese": "goose",
+}
+_SAME_IN_PLURAL = frozenset({"series", "species", "news", "glasses", "clothes", "jeans", "pants"})
+
+
+def singular(word: str) -> str:
+    """Rough English singular for one lowercase word. Good enough for subject nouns."""
+    if word in _IRREGULAR_PLURALS:
+        return _IRREGULAR_PLURALS[word]
+    if len(word) <= 3 or word in _SAME_IN_PLURAL:
+        return word
+    if word.endswith("ies"):
+        return word[:-3] + "y"
+    if word.endswith(("ches", "shes", "xes", "sses", "zzes")):
+        return word[:-2]
+    if word.endswith(("ss", "us", "is")):
+        return word
+    if word.endswith("s"):
+        return word[:-1]
+    return word
+
+
+def subject_slug(value: str) -> str:
+    """Slug with its last word made singular: "Musical Instruments" -> "musical-instrument"."""
+    slug = _slugify(value, 100)
+    head, _, last = slug.rpartition("-")
+    last = singular(last)
+    return f"{head}-{last}" if head else last
 
 
 class InstanceItem(BaseModel):
     """One countable thing extracted from a memory for deterministic aggregation."""
 
-    category: str = Field(
-        description="Canonical category slug from the closed list, or a new slug if none fits. "
-        "Examples: 'charity-event', 'model-kit', 'wedding-attended', 'instrument', "
-        "'doctor-visit', 'bike-expense', 'property-viewed', 'fish-tank', 'game-played'."
+    kind: InstanceKind = Field(
+        description="Exactly one of: event (attended or took part), item (bought, owned, sold or "
+        "wanted), visit (a professional or place visited), trip, media (book, film, show, game), "
+        "person, activity (a session of something done), money (spent, donated, raised, earned "
+        "and not tied to an item), other."
+    )
+    subject: str = Field(
+        description="The everyday noun you would count this by, singular: the X in 'how many X'. "
+        "Prefer the broader class a person would ask about ('instrument' for a guitar, "
+        "'doctor' for a dermatologist); the specifics go in display_name."
     )
     instance_key: str = Field(
         description="Normalized identity string for dedup (lowercase-hyphenated). "
@@ -212,30 +235,117 @@ class InstanceItem(BaseModel):
         description="Unit for numeric_value: 'USD', 'hours', 'days', 'km', 'count', etc."
     )
 
+    # Lengths match the Instance columns: Postgres rejects an over-long value.
     @field_validator("instance_key", mode="before")
     @classmethod
     def _slugify_key(cls, v):
-        if not isinstance(v, str):
-            return v
-        import re
-        slug = v.strip().lower()
-        slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
-        return slug or v.strip().lower()
+        return _slugify(v, 500) if isinstance(v, str) else v
 
-    @field_validator("category", mode="before")
+    @field_validator("kind", mode="before")
     @classmethod
-    def _slugify_category(cls, v):
-        if not isinstance(v, str):
-            return v
-        import re
-        slug = v.strip().lower()
-        slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
-        return slug or v.strip().lower()
+    def _coerce_kind(cls, value):
+        """Map kinds the model invents onto the real ones instead of dropping the instance."""
+        if not isinstance(value, str):
+            return value
+        key = value.strip().lower()
+        return INSTANCE_KIND_ALIASES.get(key, key if key in get_args(InstanceKind) else "other")
+
+    @field_validator("subject", mode="before")
+    @classmethod
+    def _slugify_subject(cls, v):
+        return subject_slug(v) if isinstance(v, str) else v
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def _cap_display_name(cls, v):
+        return v.strip()[:500] if isinstance(v, str) else v
+
+    @field_validator("unit", mode="before")
+    @classmethod
+    def _canonical_unit(cls, v):
+        if not isinstance(v, str) or not v.strip():
+            return None
+        unit = v.strip()
+        return UNIT_ALIASES.get(unit.lower(), unit)[:50]
+
+    @model_validator(mode="after")
+    def _default_unit(self):
+        """A bare number with no unit is a count ("3 fish"), never a silent mix-in to a dollar SUM."""
+        if self.numeric_value is not None and self.unit is None:
+            self.unit = "count"
+        return self
+
+
+class NewMemory(BaseModel):
+    """A memory as proposed by the extraction LLM."""
+
+    content: str = Field(description="One self-contained sentence, understandable without the chat.")
+    kind: MemoryKind = Field(
+        description="Exactly one of: fact, preference, event, episode. "
+        "Future plans and commitments are 'event' (with event_at) or 'fact' if undated."
+    )
+    # Defaults for the two judgement fields: some models omit them, and losing the
+    # whole memory over a missing score is worse than a neutral guess.
+    importance: int = Field(default=3, description="1 = trivia ... 5 = core to who the user is.")
+    event_at: datetime | None = Field(
+        default=None, description="When it happened or will happen, if it is tied to a date."
+    )
+    semantic: bool = Field(
+        default=False,
+        description="True for opinions, feelings, preferences, ideas. False for names, dates, numbers.",
+    )
+    entities: list[EntityMention] = Field(default_factory=list)
+    relations: list[RelationMention] = Field(default_factory=list)
+    tags: list[str] = Field(
+        default_factory=list,
+        description="2-5 short lowercase topic/category labels describing what this memory "
+        "is about. Examples: wedding, purchase, doctor-visit, hobby, travel, cooking, "
+        "fitness, work, family, pet, finance, home-improvement, streaming, gaming.",
+    )
+    replaces: list[str] = Field(
+        default_factory=list, description="IDs of known memories this one makes outdated."
+    )
+    instances: list[InstanceItem] = Field(
+        default_factory=list,
+        description="Countable things THIS memory mentions (zero, one or many). "
+        "Never list an instance under a memory that does not mention it.",
+    )
+
+    @field_validator("instances", mode="before")
+    @classmethod
+    def _drop_invalid_instances(cls, items):
+        """Validate each instance on its own so one malformed item does not discard the memory."""
+        if not isinstance(items, list):
+            return []
+        kept = []
+        for item in items:
+            try:
+                kept.append(item if isinstance(item, InstanceItem) else InstanceItem.model_validate(item))
+            except ValidationError as error:
+                log.warning("dropped an invalid instance from the extractor: %s", error)
+        return kept
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalise_tags(cls, values):
+        if not isinstance(values, list):
+            return []
+        return [t.strip().lower().replace(" ", "-") for t in values if isinstance(t, str) and t.strip()][:10]
+
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _coerce_kind(cls, value):
+        """Map kinds the model invents ("plan", "goal", ...) onto the real ones instead of failing."""
+        if not isinstance(value, str):
+            return value
+        key = value.strip().lower()
+        return KIND_ALIASES.get(key, key if key in get_args(MemoryKind) else "fact")
 
 
 class Extraction(BaseModel):
-    memories: list[NewMemory] = Field(default_factory=list)
-    instances: list[InstanceItem] = Field(default_factory=list)
+    # Required, not defaulted: a reply without "memories" is a malformed answer
+    # and must fail loudly, not read as "nothing worth remembering".
+    memories: list[NewMemory]
 
     @field_validator("memories", mode="before")
     @classmethod
@@ -249,49 +359,8 @@ class Extraction(BaseModel):
                 kept.append(item if isinstance(item, NewMemory) else NewMemory.model_validate(item))
             except ValidationError as error:
                 log.warning("dropped an invalid memory from the extractor: %s", error)
+                telemetry.record_dropped()
         return kept
-
-    @field_validator("instances", mode="before")
-    @classmethod
-    def _drop_invalid_instances(cls, items):
-        if not isinstance(items, list):
-            return []
-        kept = []
-        for item in items:
-            try:
-                kept.append(item if isinstance(item, InstanceItem) else InstanceItem.model_validate(item))
-            except ValidationError as error:
-                log.warning("dropped an invalid instance from the extractor: %s", error)
-        return kept
-
-
-class FactItem(BaseModel):
-    """One countable/aggregatable fact extracted from a memory."""
-
-    category: str = Field(
-        description="Canonical category slug. Examples: 'charity-event', 'model-kit', "
-        "'wedding-attended', 'instrument-owned', 'doctor-visit', 'camping-trip', "
-        "'road-trip', 'bike-expense', 'property-viewed', 'baby-born', 'art-event', "
-        "'health-device'."
-    )
-    item_name: str = Field(
-        description="Specific name of this instance. Examples: 'Walk for Hunger 5K', "
-        "'Fender Stratocaster', 'Dr. Smith (primary care)', 'Rachel and Mike wedding'."
-    )
-    numeric_value: float | None = Field(
-        default=None,
-        description="Numeric amount if explicitly stated (dollars raised, hours driven, days)."
-    )
-    unit: str | None = Field(
-        default=None,
-        description="Unit for numeric_value: 'USD', 'hours', 'days', 'km', etc."
-    )
-
-
-class FactExtraction(BaseModel):
-    """Structured facts extracted from a single memory for aggregation queries."""
-
-    facts: list[FactItem] = Field(default_factory=list)
 
 
 class MemoryCreate(Strict):

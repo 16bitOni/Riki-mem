@@ -22,7 +22,7 @@ from .config import MemoryConfig
 from .db import Database
 from .llm import LLMProvider
 from .models import Memory
-from .retrieval import fuse_scores, hybrid_search, importance_boost
+from .retrieval import hybrid_search
 from .schemas import RetrievalPlan
 
 log = logging.getLogger(__name__)

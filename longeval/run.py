@@ -38,11 +38,10 @@ from harness import (
     download_dataset,
     env_get,
     format_report,
-    ingest_sessions,
     list_hf_splits,
     load_env,
     parse_dataset,
-    run_questions,
+    run_benchmark,
 )
 
 log = logging.getLogger("longeval")
@@ -77,9 +76,10 @@ async def main() -> None:
         help="Path to a local dataset JSON file (skips download).",
     )
     parser.add_argument(
-        "--split", default="oracle",
+        "--split", default="s",
         choices=["oracle", "s", "m"],
-        help="Dataset split: 'oracle' (~15 MB, fastest), 's' (~277 MB), 'm' (~2.7 GB). Default: oracle.",
+        help="Dataset split: 's' (the real test: ~48 sessions, ~245 turns per question; default), "
+             "'oracle' (evidence sessions only: a quick smoke test, not a benchmark), 'm' (~2.7 GB).",
     )
     parser.add_argument(
         "--limit", type=int, default=None,
@@ -95,8 +95,13 @@ async def main() -> None:
         help="Skip session ingestion (reuse an already-populated database).",
     )
     parser.add_argument(
-        "--user-id", default="longeval_user",
-        help="User ID for the memory store (default: longeval_user).",
+        "--user-id", default="longeval",
+        help="Prefix for the per-question users: question X is stored as <prefix>:X (default: longeval).",
+    )
+    parser.add_argument(
+        "--concurrency", type=int, default=8,
+        help="Questions ingested and asked at the same time (default: 8). Lower it if the "
+             "model provider rate-limits you.",
     )
     parser.add_argument(
         "--verbose", action="store_true",
@@ -119,10 +124,6 @@ async def main() -> None:
         help="Retrieval strategy: 'single' (one-shot) or 'agentic' (multi-step with reflector).",
     )
     parser.add_argument(
-        "--skip-backfill", action="store_true",
-        help="Skip category facts backfill (use when table is already populated).",
-    )
-    parser.add_argument(
         "--full-retrieval", action="store_true",
         help="Save all retrieved contents in results JSON (not just top 5).",
     )
@@ -138,6 +139,7 @@ async def main() -> None:
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per request drowns the progress bar
 
     env = load_env(args.env)
     hf_token = env_get(env, "HF_TOKEN")
@@ -173,53 +175,41 @@ async def main() -> None:
         config_overrides["retrieval_mode"] = args.retrieval_mode
     memory = build_memory(env, **config_overrides)
 
-    if args.reingest:
-        db_url = env_get(env, "RIKI_DB_URL", "sqlite+aiosqlite:///longeval/eval.db")
-        if "sqlite" in db_url:
-            db_path = db_url.split("///")[-1] if "///" in db_url else "longeval/eval.db"
-            import os
-            if os.path.exists(db_path):
-                os.remove(db_path)
-                print(f"  Removed existing database: {db_path}")
-        args.skip_ingest = False
-        args.skip_backfill = False
-
     await memory.init()
 
+    if args.reingest:
+        from sqlalchemy import text
+
+        from riki_memory.models import Base
+
+        # Empties every riki-memory table in RIKI_DB_URL, nothing else.
+        tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
+        async with memory.db.engine.begin() as conn:
+            await conn.execute(text(f"TRUNCATE {tables} CASCADE"))
+        print("  Cleared the evaluation database")
+        args.skip_ingest = False
+
     try:
-        # -- ingest ---------------------------------------------------------
-        if not args.skip_ingest:
-            print("\nIngesting sessions ...")
-            ingest_report = await ingest_sessions(
-                memory, args.user_id, dataset.sessions, progress_fn=progress_bar,
-            )
-            episodes_msg = f", {ingest_report.get('episodes', 0)} episodes" if ingest_report.get("episodes") else ""
-            print(
-                f"  done: {ingest_report['ingested']} turn pairs from "
-                f"{ingest_report['sessions']} sessions{episodes_msg} in "
-                f"{ingest_report['elapsed_s']}s"
-                + (f" ({ingest_report['errors']} errors)" if ingest_report["errors"] else "")
-            )
-        else:
-            print("\nSkipping ingestion (--skip-ingest)")
-
-        # -- backfill category facts ----------------------------------------
-        if not args.skip_backfill:
-            print("\nBackfilling category facts ...")
-            facts_saved = await memory.backfill_category_facts(args.user_id)
-            if facts_saved:
-                print(f"  saved {facts_saved} new category facts")
-            else:
-                print("  already up-to-date")
-        else:
-            print("\nSkipping category facts backfill (--skip-backfill)")
-
-        # -- query + score --------------------------------------------------
-        print(f"\nEvaluating ({args.judge} judge) ...")
-        results = await run_questions(
-            memory, args.user_id, dataset.questions,
-            judge=args.judge, progress_fn=progress_bar,
+        # -- ingest + query + score (each question in its own user) --------
+        print(f"\n{'Querying' if args.skip_ingest else 'Ingesting and querying'} "
+              f"{len(dataset.questions)} questions, {args.concurrency} at a time ({args.judge} judge) ...")
+        results, ingest_report = await run_benchmark(
+            memory, dataset, judge=args.judge, concurrency=args.concurrency,
+            skip_ingest=args.skip_ingest, user_prefix=args.user_id,
+            progress_fn=progress_bar,
         )
+        print(
+            f"\n  done in {ingest_report['elapsed_s']}s: {ingest_report['ingested']} turn pairs from "
+            f"{ingest_report['sessions']} sessions"
+            + (f", {ingest_report['errors']} errors" if ingest_report["errors"] else "")
+        )
+        cache = memory.llm if hasattr(memory.llm, "hits") else None
+        if cache is not None:
+            print(f"  model-call cache: {cache.hits} hits, {cache.misses} misses ({cache.root})")
+            if cache.failures:
+                print(f"\n  WARNING: {cache.failures} model calls failed even after retries, so some turns "
+                      "were not remembered. These results are incomplete: lower --concurrency and re-run "
+                      "(finished calls replay from the cache).")
 
         # -- report ---------------------------------------------------------
         report = aggregate(results)
@@ -239,8 +229,6 @@ async def main() -> None:
                         "retrieved": r.retrieved_contents,
                         "hit": r.hit,
                         "rr": r.reciprocal_rank,
-                        "set_recall": r.set_recall,
-                        "answer_accuracy": r.answer_accuracy,
                         **({"all_retrieved": r.all_retrieved_contents}
                            if args.full_retrieval else {}),
                     }

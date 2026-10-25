@@ -1,0 +1,25 @@
+# Local Postgres + pgvector for development and the Postgres test suite.
+#
+#   docker compose up -d
+#   RIKI_TEST_PG_URL=postgresql+asyncpg://riki:riki@localhost:5433/riki pytest
+#
+# Port 5433 so it never clashes with a Postgres already installed on 5432.
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.0-pg17
+    environment:
+      POSTGRES_USER: riki
+      POSTGRES_PASSWORD: riki
+      POSTGRES_DB: riki
+    ports:
+      - "5433:5432"
+    volumes:
+      - riki-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U riki -d riki"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  riki-pgdata:

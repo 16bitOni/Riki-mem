@@ -2,41 +2,76 @@
 per ``session_scope()`` block: committed if the block finishes, rolled back if
 it raises.
 
-The data lives wherever ``database_url`` points — a local SQLite file by
-default, or Postgres (Neon, RDS, self-hosted) with the ``postgres`` extra.
-The keyword engine is picked from the URL automatically (see ``keyword.py``);
-everything else is plain SQLAlchemy and runs on both.
+The data lives in Postgres (self-hosted, Neon, RDS, Supabase, ...) with the
+pgvector extension. The schema is managed by migrations (``migrate.py``). Keyword search uses Postgres full-text search
+(``keyword.py``), vector search uses pgvector HNSW indexes (``vectors.py``).
 """
 
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from sqlalchemy import event
+from sqlalchemy import event, inspect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from .keyword import KeywordIndex, select_keyword_index
-from .models import Base
+from . import migrate
+from .vectors import PgVectorIndex, register_codec
+
+
+def async_url(database_url: str) -> str:
+    """Accept a plain ``postgresql://`` URL (what most hosts hand out) and use asyncpg."""
+    for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
+        if database_url.startswith(prefix):
+            return "postgresql+asyncpg://" + database_url[len(prefix):]
+    raise ValueError(
+        "riki-memory needs a Postgres database with pgvector, e.g. "
+        "postgresql://user:password@localhost:5432/riki (see docker-compose.yml)."
+    )
+
+
+def _refuse_outdated_instances(sync_conn) -> None:
+    """Fail loudly on an ``instances`` table from before the kind/subject schema.
+
+    ``create_all`` never alters an existing table, so an old one would only
+    surface later as a failed insert on every save.
+    """
+    inspector = inspect(sync_conn)
+    if not inspector.has_table("instances"):
+        return
+    columns = {c["name"] for c in inspector.get_columns("instances")}
+    if "subject" not in columns:
+        raise RuntimeError(
+            "This database's 'instances' table predates the kind/subject schema. "
+            "Instances are derived from extraction, so drop the table (or the whole "
+            "database) and re-ingest."
+        )
 
 
 class Database:
-    def __init__(self, database_url: str) -> None:
-        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
-        self.engine = create_async_engine(database_url, connect_args=connect_args)
-        if database_url.startswith("sqlite"):
-            # Wait instead of failing on a locked database (multi-process use).
-            @event.listens_for(self.engine.sync_engine, "connect")
-            def _sqlite_pragmas(dbapi_conn, _):
-                dbapi_conn.execute("PRAGMA busy_timeout = 5000")
-                dbapi_conn.execute("PRAGMA journal_mode = WAL")
+    def __init__(self, database_url: str, pool_size: int = 5, max_overflow: int = 10) -> None:
+        self.engine = create_async_engine(
+            async_url(database_url),
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_pre_ping=True,  # survive the server or a proxy dropping idle connections
+        )
+
+        @event.listens_for(self.engine.sync_engine, "connect")
+        def _binary_vectors(dbapi_conn, _):
+            dbapi_conn.run_async(register_codec)
 
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
-        self.keywords: KeywordIndex = select_keyword_index(database_url)
+        self.vectors = PgVectorIndex()
 
     async def init(self) -> None:
-        """Create tables and the keyword index. Safe to call on every startup."""
+        """Bring the schema up to date (migrations) and build indexes. Safe on every startup."""
         async with self.engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        await self.keywords.init(self)
+            await self.vectors.prepare(conn)  # the vector type must exist before the tables
+        # Connections opened before the extension existed have no vector codec.
+        await self.engine.dispose()
+        async with self.engine.begin() as conn:
+            await conn.run_sync(_refuse_outdated_instances)
+            await conn.run_sync(migrate.upgrade)
+        await self.vectors.init(self)
 
     async def close(self) -> None:
         await self.engine.dispose()
