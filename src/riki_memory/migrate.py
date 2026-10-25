@@ -59,6 +59,24 @@ def upgrade(connection) -> None:
     command.upgrade(_config(connection), "head")
 
 
+def _scripts():
+    from alembic.script import ScriptDirectory
+
+    config = Config()
+    config.set_main_option("script_location", str(MIGRATIONS))
+    return ScriptDirectory.from_config(config)
+
+
+def head() -> str:
+    """The newest revision this version of the library ships."""
+    return _scripts().get_current_head()
+
+
+def revisions() -> set[str]:
+    """Every revision this version of the library knows."""
+    return {script.revision for script in _scripts().walk_revisions()}
+
+
 def current(connection) -> str | None:
     """The revision this database is at (``None`` before the first upgrade)."""
     if not inspect(connection).has_table(VERSION_TABLE):

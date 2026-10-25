@@ -276,6 +276,26 @@ class InstanceItem(BaseModel):
         return self
 
 
+AttributeValue = str | int | float | bool | None | list[str | int | float | bool]
+MAX_ATTRIBUTES = 30
+
+
+def clean_attributes(value) -> dict:
+    """Keep what fits ``attributes``: up to 30 string keys (60 chars) with scalar or
+    list-of-scalar values. Model output that doesn't fit is dropped, not fatal."""
+    if not isinstance(value, dict):
+        return {}
+    kept = {}
+    for key, item in list(value.items())[:MAX_ATTRIBUTES]:
+        if not isinstance(key, str) or not key.strip() or len(key) > 60:
+            continue
+        if isinstance(item, (str, int, float, bool)) or item is None:
+            kept[key.strip()] = item
+        elif isinstance(item, list) and all(isinstance(x, (str, int, float, bool)) for x in item):
+            kept[key.strip()] = item[:50]
+    return kept
+
+
 class NewMemory(BaseModel):
     """A memory as proposed by the extraction LLM."""
 
@@ -310,6 +330,15 @@ class NewMemory(BaseModel):
         description="Countable things THIS memory mentions (zero, one or many). "
         "Never list an instance under a memory that does not mention it.",
     )
+    attributes: dict[str, AttributeValue] = Field(
+        default_factory=dict,
+        description="Structured fields, ONLY when the app's instructions ask for them; otherwise empty.",
+    )
+
+    @field_validator("attributes", mode="before")
+    @classmethod
+    def _keep_valid_attributes(cls, value):
+        return clean_attributes(value)
 
     @field_validator("instances", mode="before")
     @classmethod
@@ -382,3 +411,5 @@ class MemoryCreate(Strict):
     tags: list[str] = Field(default_factory=list, max_length=10)
     replaces: list[str] = Field(default_factory=list, max_length=20)
     instances: list[InstanceItem] = Field(default_factory=list, max_length=20)
+    # Your app's own structured fields: short keys, scalar or list-of-scalar values.
+    attributes: dict[str, AttributeValue] = Field(default_factory=dict, max_length=MAX_ATTRIBUTES)

@@ -22,6 +22,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -90,6 +91,8 @@ class Memory(Base):
     embedding_model: Mapped[str | None] = mapped_column(String(100))
     embedded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     tags = mapped_column(JSON, nullable=True, default=list)
+    # Your app's own structured fields ({"type": "medication", "dose": "5 mg"}); filterable.
+    attributes = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     superseded_by_id: Mapped[str | None] = mapped_column(
         ForeignKey("memories.id", ondelete="SET NULL")
@@ -110,6 +113,7 @@ class Memory(Base):
         Index("memory_user_active_created", "user_id", "is_active", "created_at"),
         Index("memory_user_event", "user_id", "event_at"),
         Index("memory_source_key", "source_key"),
+        Index("memory_attributes", "attributes", postgresql_using="gin"),
     )
 
 

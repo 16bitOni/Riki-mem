@@ -1,246 +1,594 @@
+<div align="center">
+
 # riki-memory
 
-A standalone long-term memory layer for AI agents. Extracted from [Riki](https://github.com/16bitOni/Riki) — a personal AI agent — with the rough edges fixed.
+**Long-term memory for AI agents that you can count on, literally.**
 
-**What it does**
+Your agent remembers what users tell it across conversations, answers "how many",
+"how much" and "when" from data instead of guesswork, and gives users full
+control over what is stored about them.
 
-- **Extraction** — an LLM turns each conversation exchange into durable, self-contained memories (facts, preferences, events, episodes), with contradiction handling via `replaces`.
-- **Hybrid retrieval** — every recall runs four channels in parallel (keyword via Postgres full-text search, semantic via pgvector HNSW, time-window, entity-graph walk) and merges them with weighted Reciprocal Rank Fusion. A failing channel degrades gracefully instead of breaking recall.
-- **Dedup with teeth** — content-hash exact match, trigram near-duplicate detection gated on kind + date slot (so "dentist in March" never merges with "dentist in April"), and vector-level dedup restricted to embeddings from the current model.
-- **Drift protection** — every vector records which model made it; search never compares vectors across models, and `reembed_stale()` backfills after a model change.
-- **Maintenance** — health checks, stale re-embedding, LLM consolidation of paraphrase drift, and history re-extraction.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](#requirements)
+[![Postgres + pgvector](https://img.shields.io/badge/storage-Postgres%20%2B%20pgvector-336791.svg)](#storage-and-upgrades)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#project-status)
 
-**What it is not**
+[Why](#why-riki-memory) •
+[How it works](#how-it-works) •
+[Install](#installation) •
+[Quick start](#quick-start) •
+[Guide](#usage-guide) •
+[CLI](#command-line) •
+[Configuration](#configuration) •
+[Contributing](#contributing)
 
-- Not a hosted service. It's a library that keeps its own tables in a Postgres database you point it at (pgvector required). Your app's schema is never touched — the memory system is a separate persistence boundary, like Redis.
-- Not framework-locked. You bring the LLM via a 3-method `LLMProvider` protocol. An `OpenAICompatibleProvider` (any OpenAI-style `/chat/completions` + `/embeddings` endpoint: OpenAI, xAI, Ollama, proxies) ships in the box.
+</div>
 
-## Install
+---
 
-```bash
-uv add riki-memory
-# or: pip install riki-memory
+## The problem, in one example
+
+A user mentions their plants across three conversations, months apart:
+
+> *July:* "I bought a money plant, a snake plant and a tulsi for the balcony."
+> *September:* "My tulsi died, I overwatered it."
+> *October:* "Got an areca palm for the living room."
+
+Then asks: **"How many plants do I have right now?"**
+
+Most memory layers hand the model a pile of similar-looking sentences and hope it
+counts correctly. riki-memory stores the countable things as rows, applies the rule
+"the newest mention decides", and gives the model the answer *with its working*:
+
+```text
+## Computed from memory (deterministic; use this instead of counting the memories yourself)
+COUNT of plant (status: current/occurred, newest mention decides) = 3
+Counted:
+- Money Plant | current | 2026-07-27 | memory 4400ff92520f428e90a2360a706d78e1
+- Snake Plant | current | 2026-07-27 | memory 4400ff92520f428e90a2360a706d78e1
+- Areca Palm | current | 2026-10-05 | memory e7d568b0e8474bf78f24eb598259c66c
+Left out:
+- Tulsi | former | 2026-09-05 | memory 34277ec39f1c41deb48aff2eab45578a
+
+## Memories that may be relevant to this message
+- [fact, 2026-07-27] Sub bought a money plant, a snake plant and a tulsi for the balcony.
+- [fact, 2026-10-05] Sub got an areca palm for the living room.
+- [fact, 2026-09-05] Sub's tulsi died from overwatering.
 ```
 
-You need Postgres with the [pgvector](https://github.com/pgvector/pgvector)
-extension. Locally, the repo's `docker-compose.yml` runs one on port 5433:
+*(Real output of `memory.context()`.)* The model doesn't count; it reads the count,
+and anyone can check what was included and why the tulsi was left out.
+
+---
+
+## Why riki-memory
+
+| | What usually goes wrong | What riki-memory does |
+|---|---|---|
+| **Counting, sums, dates** | The model counts over retrieved text: repeats get double-counted, sold or planned things get included, results change between runs. | Countable things are stored as rows with a status (`occurred`, `current`, `planned`, `desired`, `former`). Counts, sums and date differences are plain SQL, shown with what was counted and what was left out. |
+| **Changing facts** | "Lives in Pune" and "moved to Bangalore" both come back; the model picks one. | A newer fact retires the older one (kept as history), and near-duplicates are merged per date slot. |
+| **Silent failures** | Extraction quietly stores nothing and nobody notices for weeks. | Every write reports what it did (proposed, saved, failed, tokens). `riki doctor` checks that your model's replies actually parse. |
+| **User control** | Deletion means "hidden"; no export. | Hard delete (with history and derived summaries), full JSONL export/import, delete a whole tenant, all one command. |
+| **Infrastructure** | A vector DB, a graph DB and a document store that can drift apart. | One Postgres database. A memory, its vector, its entities and its countable facts are saved in one transaction. |
+| **Lock-in** | One model vendor, or a hosted service. | A library. Any OpenAI-compatible model (OpenAI, Anthropic via proxy, xAI, Ollama, Bedrock gateways) or your own 3-method provider. |
+
+---
+
+## Features
+
+- **Memory from conversations**: an LLM turns each exchange into short, self-contained
+  memories (facts, preferences, events), with absolute dates ("next Friday" becomes a date).
+- **Exact answers**: "how many", "how much", "average", "when", "how long ago" are computed
+  from stored data, with evidence and exclusions.
+- **Hybrid search**: keyword (Postgres full-text), meaning (pgvector), date window and a
+  people/places graph, merged with weighted rank fusion; an optional reranker.
+- **Cheap reads**: greetings never reach a model; most questions are planned without any
+  model call; one embedding per question.
+- **Deduplication with care**: exact, near-duplicate (same kind and date slot only, so
+  "dentist in March" never merges with "dentist in April"), and by meaning.
+- **Your own data types**: structured `attributes` on every memory, filled by you or by
+  the extractor following your instructions, and filterable.
+- **Full user control**: edit, forget, hard delete, delete user, delete tenant, JSONL
+  export and import.
+- **Built for production**: Postgres only, automatic schema migrations, retries with
+  backoff on rate limits, per-write telemetry, safe concurrent startups.
+- **Ready for companies later**: every memory lives in a namespace with a tenant and a kind
+  (user, agent, team, org). See [Docs/SCOPE_MODEL.md](Docs/SCOPE_MODEL.md).
+
+---
+
+## How it works
+
+### Writing: what happens after each turn
+
+```mermaid
+flowchart LR
+    A["remember(user, message, reply)"] --> B["Extraction<br/>(fast model, JSON)"]
+    B --> C{"For each proposed memory"}
+    C --> D["Exact duplicate?<br/>(content hash)"]
+    D -- yes --> X["Return existing"]
+    D -- no --> E["Embed<br/>(outside any transaction)"]
+    E --> F["Near-duplicate?<br/>(same kind + date slot)"]
+    F --> G[("One transaction:<br/>memory + vector + entities<br/>+ countable instances")]
+    G --> H["Retire replaced memories<br/>(kept as history)"]
+    G --> T["WriteReport<br/>(telemetry)"]
+```
+
+1. **Extraction.** One call to your *fast* model reads the exchange and returns memories as
+   JSON: content, kind, importance, date, tags, people and places, and any countable
+   **instances** ("bought a snake plant" → `item / plant / snake-plant / current`). It also
+   sees what is already known, so it reuses the same keys and subjects.
+2. **Deduplication.** The same sentence twice returns the first one. A reworded duplicate
+   in the same date slot replaces the older wording. Different days never merge.
+3. **Saving.** The memory, its vector, its entity links and its instances are written in a
+   single transaction. If the embedding call fails, the memory is still saved and flagged
+   so `reembed_stale()` can finish the job.
+4. **Reporting.** Each write produces a `WriteReport`; running totals are in `health()`.
+
+### Reading: what happens before each answer
+
+```mermaid
+flowchart LR
+    Q["context(user, question)"] --> R{"Router"}
+    R -- "hi / thanks" --> Z["Nothing to fetch"]
+    R -- "how many / how much" --> S["SQL over instances<br/>count · sum · average"]
+    R -- "when / how long ago" --> TD["Find both events,<br/>date difference"]
+    R -- "anything else" --> P["Plan<br/>(heuristic first, model if needed)"]
+    P --> K["Keyword"] & V["Meaning"] & W["Date window"] & GR["Graph"]
+    K & V & W & GR --> F["Rank fusion<br/>(+ optional rerank)"]
+    S --> O["Prompt-ready context:<br/>computed answer + memories"]
+    TD --> O
+    F --> O
+```
+
+- **Router.** Classifies the question without a model call: small talk, counting,
+  temporal, exploratory, or a normal lookup.
+- **Counting and sums.** The counted noun ("plants") is matched to stored subjects, by
+  word first and, only if no word matches, by meaning with one quick model check that a
+  stored subject really is a kind of it (a "cat" is not a "dog"). The newest mention of each
+  thing decides its status; repeat mentions of the same amount are counted once.
+- **Dates.** "How many days between X and Y" and "how long ago did I X" find both events
+  and compute the difference in days, weeks, months or years.
+- **Search.** Four channels run in parallel and are merged with weighted reciprocal rank
+  fusion; a failing channel is skipped, not fatal. The plan comes from rules
+  (`planner_mode="escalate"`), and the model planner is only asked when that finds nothing.
+- **Output.** `context()` returns text for your system prompt: the computed answer first
+  (with evidence and exclusions), then the profile when useful, then the memories.
+
+---
+
+## Requirements
+
+- **Python** 3.10 or newer
+- **PostgreSQL** 13+ with the **pgvector** extension (0.8+ recommended). Any host works:
+  Docker, self-hosted, Neon, Supabase, RDS, Cloud SQL.
+- **A model endpoint** that speaks the OpenAI API (`/chat/completions` with JSON output,
+  and `/embeddings`), or your own provider class.
+
+---
+
+## Installation
+
+**1. Install the package**
 
 ```bash
-docker compose up -d
+pip install riki-mem            # or: uv add riki-mem
 ```
+
+From source:
+
+```bash
+git clone https://github.com/16bitOni/Riki-mem.git
+cd Riki-mem
+uv sync                         # or: pip install -e .
+```
+
+**2. Start a database** (skip if you already have Postgres with pgvector):
+
+```bash
+docker compose up -d            # pgvector/pgvector on port 5433, user/password riki
+```
+
+**3. Configure**, in a `.env` file in your working directory or as environment variables:
+
+```bash
+RIKI_DATABASE_URL=postgresql://riki:riki@localhost:5433/riki
+RIKI_API_KEY=sk-...
+RIKI_BASE_URL=https://api.openai.com/v1      # any OpenAI-compatible endpoint
+RIKI_CHAT_MODEL=gpt-4o-mini                  # main model
+RIKI_FAST_MODEL=gpt-4o-mini                  # extraction, planning, reranking
+RIKI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+**4. Check the setup:**
+
+```bash
+riki doctor
+```
+
+```text
+[  ok  ] Postgres reachable: version 17.6
+[  ok  ] pgvector installed: version 0.8.0
+[  ok  ] schema: up to date (0003_memory_attributes)
+[  ok  ] embeddings: text-embedding-3-small, 1536 dimensions, 180 ms
+[  ok  ] extraction model: structured output parses (900 ms)
+```
+
+`doctor` changes nothing. It tells you, before your users do, if the database is
+unreachable, pgvector is missing, or your model's JSON replies can't be used.
+
+---
 
 ## Quick start
 
 ```python
 import asyncio
-from riki_memory import RikiMemory, OpenAICompatibleProvider, MemoryConfig
+from riki_memory import RikiMemory
 
 async def main():
-    memory = RikiMemory(
-        database_url="postgresql://riki:riki@localhost:5433/riki",
-        llm=OpenAICompatibleProvider(
-            api_key="...",
-            base_url="https://api.x.ai/v1",   # any OpenAI-compatible endpoint
-            chat_model="grok-4",
-            fast_model="grok-4-fast",          # cheap model for planning/extraction
-            embedding_model="text-embedding-3-small",
-        ),
-        config=MemoryConfig(),
-        on_important=lambda m: print(f"important: {m.content}"),  # optional
-    )
-    await memory.init()
+    async with RikiMemory.from_env() as memory:      # tables are created on first use
+        user = "user_123"
 
-    # Before answering: get prompt-ready context for this message.
-    context, memories = await memory.context(
-        user_id="user_123", message="where does my sister work?", recent_chat="",
-    )
+        # After a turn: remember what matters (safe as a background task, never raises)
+        await memory.remember(
+            user,
+            "I adopted a beagle last weekend, we named him Biscuit.",
+            "Congratulations! How is Biscuit settling in?",
+            turn_key="chat-1/turn-1",                # stable id, so retries never duplicate
+        )
 
-    # After answering (run it in the background — it never raises):
-    await memory.remember(
-        user_id="user_123",
-        user_message="where does my sister work?",
-        reply="Riya works at Zerodha.",
-        known=memories,          # what recall showed, so `replaces` stays honest
-        turn_key="chat/turn-42", # stable id: safe to retry
-    )
-
-    await memory.close()
+        # Before answering: what the agent should know for this message
+        context, memories = await memory.context(user, "What's my dog called?")
+        print(context)
 
 asyncio.run(main())
 ```
 
-Direct writes skip the LLM entirely:
+Put `context` into your agent's system prompt; that's the whole integration.
+
+---
+
+## Usage guide
+
+### In a chat loop
 
 ```python
-from riki_memory import MemoryCreate
+context, memories = await memory.context(user_id, message, recent_chat=last_few_turns)
+reply = await my_agent.answer(message, system=BASE_PROMPT + "\n\n" + context)
+
+# after replying; pass what recall showed so the extractor may update those memories
+asyncio.create_task(memory.remember(
+    user_id, message, reply, known=memories, turn_key=f"{chat_id}/{turn_no}",
+))
+```
+
+When replaying old conversations, pass `at=` (the turn's original time) so relative dates
+like "next Friday" resolve correctly.
+
+### Saving directly (no model call)
+
+```python
+from riki_memory import MemoryCreate, InstanceItem
 
 await memory.save(MemoryCreate(
     user_id="user_123",
     content="Sub's sister Riya works at Zerodha in Bangalore.",
-    kind="fact",
-    importance=4,
+    kind="fact",          # fact | preference | event | episode
+    importance=4,         # 1 trivia ... 5 core identity
+))
+
+await memory.save(MemoryCreate(
+    user_id="user_123",
+    content="Sub bought a snake plant on 27 July 2026.",
+    instances=[InstanceItem(kind="item", subject="plant", instance_key="snake-plant",
+                            display_name="Snake plant", status="current")],
 ))
 ```
 
-## API
+### Searching with full detail
 
-| Method | What it does |
+```python
+memories, report = await memory.recall("user_123", "where does my sister work?")
+report["route"]       # lookup | aggregate | temporal | exploratory | chitchat
+report["planner"]     # which planner ran (heuristic, llm, ...)
+report["channels"]    # hits and timing per search channel
+```
+
+### The app's own kinds of data
+
+Every memory has `attributes`: your structured fields, indexed and filterable.
+
+```python
+from riki_memory import MemoryConfig, RikiMemory
+
+memory = RikiMemory.from_env(config=MemoryConfig(
+    extraction_instructions=(
+        "For medications, set type='medication' and put the dose and the times "
+        "of day in attributes."
+    ),
+))
+
+# a conversation like "I take 5 mg of amlodipine every morning" now yields
+# attributes={"type": "medication", "dose": "5 mg", "times": ["morning"]}
+pills = await memory.list_memories("user_123", attributes={"type": "medication"})
+```
+
+You can also set `attributes={...}` yourself in `MemoryCreate`.
+
+### Giving users control over their data
+
+```python
+await memory.list_memories("user_123", limit=50, offset=0)        # what is stored, newest first
+await memory.edit("user_123", memory_id, content="Lives in Bangalore.")  # new version, old kept as history
+await memory.forget("user_123", memory_id)       # hide it; never recalled again
+await memory.delete("user_123", memory_id)       # remove it for real, with its history
+await memory.delete_user("user_123")             # everything for this user
+
+await memory.export_user("user_123", "user_123.jsonl")   # streaming JSONL, any size
+await memory.import_user("user_123.jsonl")                # idempotent restore
+await memory.import_user("user_123.jsonl", as_user="user_123-copy")  # an independent copy
+```
+
+`delete` also removes episode summaries that quoted the memory and clears the profile text
+built from it. Exports include forgotten and superseded memories, so history survives a
+move; vectors are left out by default (`include_embeddings=True` keeps them).
+
+### Organisations and shared memory
+
+```python
+await memory.create_namespace("acme/alice", tenant_id="acme", kind="user")
+await memory.create_namespace("acme/eng-team", tenant_id="acme", kind="team")
+await memory.list_namespaces("acme")
+await memory.delete_tenant("acme")    # an organisation leaves: everything goes
+```
+
+Namespaces created implicitly (by a first save) belong to tenant `"default"`. Shared reads
+across namespaces are planned; see [Docs/SCOPE_MODEL.md](Docs/SCOPE_MODEL.md).
+
+### Watching the write path
+
+```python
+memory = RikiMemory.from_env(on_write=lambda report: metrics.emit(report.as_dict()))
+
+stats = (await memory.health())["writes"]
+stats["failed_writes"], stats["empty_writes"], stats["model_calls"], stats["avg_latency_ms"]
+```
+
+Alert on `failed_writes`, and on a jump in `empty_writes`. The library also logs a warning
+after 25 writes in a row that propose nothing without any error
+(`empty_write_warning_after`), the usual sign that the model's replies aren't understood.
+
+### Maintenance
+
+```python
+await memory.reembed_stale()           # after changing embedding model, or a failed embed
+await memory.consolidate("user_123")   # merge paraphrase drift (weekly is plenty)
+await memory.health("user_123")        # vectors pending, models in use, write stats
+```
+
+---
+
+## Command line
+
+The `riki` command reads the same `RIKI_*` settings (or `--env-file path`).
+
+| Command | What it does |
 |---|---|
-| `context(user_id, message, recent_chat)` | Prompt-ready block: profile + relevant memories |
-| `recall(user_id, query, recent_chat)` | `(memories, report)` — report has per-channel hits, timings, scores |
-| `remember(user_id, user_message, reply, …)` | Extract + save + refresh profile; never raises |
-| `save(MemoryCreate)` | Direct validated write (dedup, entities, callbacks) |
-| `forget(user_id, memory_id)` | Hide a memory (kept on record). Final — re-saving won't resurrect it |
-| `get` / `list_memories(limit, offset)` | Fetch one memory / newest-first, paged |
-| `edit(user_id, memory_id, content=…, importance=…, …)` | Fix a memory. A text change saves a new version and retires the old one |
-| `delete(user_id, memory_id)` | **Hard** delete: the memory, its older versions, episode summaries and profile text written from it |
-| `delete_user(user_id)` | Delete everything stored for one user |
-| `export_user(user_id, path)` / `import_user(path)` | Streaming JSONL backup and restore; import is safe to re-run, `as_user=` makes a copy |
-| `health(user_id?)` | `needs_embedding` count, models in use, and `writes`: this process's write stats |
-| `reembed_stale(user_id?)` | Backfill vectors after an embedding-model change |
-| `consolidate(user_id, dry_run)` | Merge paraphrase drift. Schedule it (weekly cron is plenty) |
-| `evaluate(user_id, cases)` | Hit-rate / MRR over your own `EvalCase` JSON file |
+| `riki doctor` | Check database, pgvector, schema version, embeddings and the extraction model. Changes nothing. |
+| `riki config [--json]` | Every option with its section, default, allowed values and meaning. |
+| `riki users [--tenant acme]` | List namespaces. |
+| `riki export USER FILE [--embeddings] [--since ISO]` | Export one user's memory as JSONL (incremental with `--since`). |
+| `riki import FILE [--as-user USER]` | Import an export; safe to re-run. |
+| `riki delete-user USER [--yes]` | Delete everything for a user (asks first). |
+| `riki delete-tenant TENANT [--yes]` | Delete every namespace of a tenant (asks first). |
+| `riki upgrade` | Apply schema migrations now (for deploy pipelines). |
 
-## Seeing what the write path does
-
-Every `remember()` produces a `WriteReport`: memories proposed / saved / dropped,
-failures and their errors, model calls, tokens, latency. Totals are in
-`memory.write_stats`; pass `on_write=` to forward each report to your logs or
-metrics:
-
-```python
-memory = RikiMemory(database_url=..., llm=..., on_write=lambda r: metrics.emit(r.as_dict()))
-```
-
-Alert on `failed_writes`, and on a jump in `empty_writes`: a run of writes that
-propose nothing without any error usually means the model's replies aren't
-being understood. The library also logs a warning after
-`empty_write_warning_after` (default 25) such writes in a row.
-
-## Upgrades
-
-`init()` runs the schema migrations (Alembic, shipped in the package), so
-upgrading the library never means re-ingesting. Startups are serialised by a
-Postgres lock, the version lives in its own `riki_schema_version` table (no
-clash with your app's Alembic), and databases created before migrations
-existed are adopted in place.
-
-## Where the data lives
-
-In Postgres, wherever `database_url` points: self-hosted, Neon, RDS, Supabase,
-anything with pgvector available. Everything runs inside that one database, so
-saving a memory, its countable instances, its entities and its vector is one
-transaction — they can never drift apart.
-
-- **Keyword search**: Postgres full-text search (`tsvector` + `ts_rank_cd`, GIN index).
-- **Vector search**: pgvector HNSW, cosine distance. Each embedding model gets
-  its own partial index, so an old and a new model can coexist while
-  `reembed_stale()` catches up; vectors from different models are never compared.
-  Indexes are built `CONCURRENTLY`, so a live table keeps taking writes.
-- **Counting**: plain SQL over the `instances` table.
-
-```python
-memory = RikiMemory(
-    # plain postgresql:// URLs are fine; asyncpg is used underneath
-    database_url="postgresql://user:pass@ep-abc-123.neon.tech/memorydb?ssl=require",
-    llm=...,
-)
-await memory.init()  # creates the vector extension, tables and indexes (idempotent)
-```
-
-The schema stays inside the library's own tables in that database — your
-application's tables are never touched.
-
-## Token-efficient retrieval
-
-The biggest LLM cost in most memory systems is the *planner* — a model call on
-every message just to decide what to search for. `riki-memory` can skip it:
-
-```python
-config = MemoryConfig(
-    planner_mode="escalate",  # "llm" | "heuristic" | "escalate"
-)
-```
-
-- `"heuristic"` — keywords, entities and dates come from regex over the message
-  (stopword filtering, capitalised-name detection, relative date parsing like
-  "last week" or "in March"). **Zero chat tokens**, always.
-- `"escalate"` (default) — tries the heuristic plan first and runs the full
-  hybrid search; only when it finds nothing does it call the LLM planner (which
-  is better at resolving references like "that role" from recent chat). Common
-  case: zero tokens. The report tells you which planner ran
-  (`report["planner"]`).
-- `"llm"` — the original behaviour: always plan with the fast model.
-
-Every mode still makes exactly one embedding call for the semantic channel —
-the same "one embedding per query, no LLM in retrieval" shape the reference
-systems use. Greetings and small talk never reach any model via the
-heuristic pre-gate.
+---
 
 ## Configuration
+
+Defaults are meant to work as they are. To see every option:
+
+```bash
+riki config
+```
 
 ```python
 from riki_memory import MemoryConfig
 
-config = MemoryConfig(
-    enable_entities=False,      # skip the entity graph (write-heavy at small scale)
-    profile_injection="when_empty",  # "always" | "when_empty" | "never"
-    recall_limit=8,
-    weight_semantic=1.0,
-    weight_keyword=1.0,
-    weight_graph=0.7,
-    weight_time=0.5,
-    rerank="llm",               # optional LLM re-ordering of the shortlist
-)
+MemoryConfig.describe()                      # the same, as data
+MemoryConfig(rerank="off").changed()         # {'rerank': 'off'}: only your overrides
 ```
 
-See `src/riki_memory/config.py` for every tunable and its default.
+The options people change most:
 
-## Custom LLM provider
+| Option | Default | What it controls |
+|---|---|---|
+| `planner_mode` | `"escalate"` | `heuristic` never calls a model to plan; `llm` always does; `escalate` only when rules find nothing. |
+| `rerank` | `"llm"` | Re-order the shortlist with the fast model (`"off"` saves one call per question). |
+| `recall_limit` | `15` | Memories handed to your agent per question. |
+| `profile_injection` | `"when_empty"` | Add the user's profile summary `always`, `never`, or only when nothing else matched. |
+| `enable_entities` | `True` | People/places graph (relations like "my sister's husband"). |
+| `enable_sql_aggregation` | `True` | Exact counting and sums from stored instances. |
+| `enable_episodes` | `False` | Session summaries (call `close_session()` after each session). |
+| `retrieval_mode` | `"single"` | `agentic` lets a reflector run follow-up searches. |
+| `extraction_instructions` | `""` | Your app's own rules for the extractor. |
+| `subject_match_threshold` | `0.40` | How close in meaning a stored subject must be to be considered for a count (re-check with `longeval/calibrate_subjects.py` after changing embedding model). |
+| `default_timezone` | `"UTC"` | Timezone for users without one; used to resolve "yesterday". |
+
+### Custom model provider
 
 ```python
-from riki_memory import LLMProvider
+from riki_memory import RikiMemory
 
-class MyProvider(LLMProvider):
-    embedding_model_id = "my-embed-1"
+class MyProvider:
+    embedding_model_id = "my-embed-1"   # recorded on every vector
 
-    async def chat_json(self, system, user, schema, *, fast=True): ...
-    async def chat_text(self, system, user, *, fast=True): ...
-    async def embed(self, text): ...
+    async def chat_json(self, system, user, schema, *, fast=True): ...  # return schema instance
+    async def chat_text(self, system, user, *, fast=True): ...          # return str
+    async def embed(self, text): ...                                    # return list[float]
+
+memory = RikiMemory(database_url="postgresql://...", llm=MyProvider())
 ```
 
-`fast=True` calls are planning/extraction/rerank — route them to your cheap model.
+`fast=True` calls (extraction, planning, reranking) should go to your cheap model. The
+built-in `OpenAICompatibleProvider` already retries rate limits and server errors with
+backoff and unwraps the reply formats some models use.
 
-## What changed vs the Riki original
+---
 
-While extracting, the flaws found in the codebase teardown were fixed:
+## Storage and upgrades
 
-1. The recall planner runs on the **fast** model, and greetings/thanks/farewells skip the planner entirely via a heuristic pre-gate (the original burned a main-model call on every "hi").
-2. **All** kinds are embedded by default — the original left facts invisible to the semantic channel.
-3. Exact duplicates no longer **resurrect** forgotten memories.
-4. The exact-hash check → insert race is caught: concurrent identical saves return the same row instead of crashing.
-5. The entity graph is **optional** (`enable_entities=False` skips its write overhead and the graph channel).
-6. Consolidation is a first-class `consolidate()` method, not a CLI-only script.
-7. The hard-coded cognition trigger is now an awaited `on_important` callback the host supplies.
-8. Profile injection defaults to `when_empty` (~350 tokens saved on most turns), and the staleness check reads fresh state instead of a request-scoped object.
-9. Postgres + pgvector is the only backend: one transactional store for text, vectors, entities and countable instances.
+Everything lives in the Postgres database you point it at, in riki-memory's own tables;
+your application's tables are never touched.
+
+| Table | Holds |
+|---|---|
+| `users` | Namespaces: id, tenant, kind, name, timezone, profile summary |
+| `memories` | Content, kind, importance, date, tags, attributes, vector, history links |
+| `instances` | Countable things: kind, subject, key, status, date, amount and unit |
+| `entities`, `entity_relations`, `memory_entities` | People, places, organisations and how they relate |
+| `episodes`, `episode_memories` | Optional session summaries |
+| `riki_schema_version` | Migration state (its own name, so it never clashes with your app's Alembic) |
+
+- **Search indexes:** a full-text GIN index for keywords; a pgvector HNSW index per
+  embedding model, so an old and a new model can coexist while `reembed_stale()` catches
+  up. Vectors from different models are never compared. Indexes are built
+  `CONCURRENTLY`, so a live table keeps taking writes.
+- **Migrations** run automatically on first use (or `riki upgrade`). Concurrent startups
+  are serialised with a Postgres advisory lock, and databases from before migrations
+  existed are adopted in place. Upgrading never means re-ingesting.
+
+---
+
+## Performance and limits
+
+Measured on a laptop (Docker Desktop on Windows, about 1.7 ms per database round trip;
+expect less on a server network):
+
+| Measurement | Result |
+|---|---|
+| Vector search, user with 80 memories (50k in the table, 1536 dims) | p50 18 ms, exact top-20 recall 1.000 |
+| Vector search, user with 10,000 memories | p50 85 ms, exact top-20 recall 1.000 |
+| Write, excluding the model call | about 50 ms per turn |
+| Write, model call (Claude Haiku 4.5) | about 1.8 to 2.7 s per turn |
+
+- **Each write** costs one fast-model call (about 3,500 input tokens: the instructions plus
+  the exchange) and one embedding per saved memory.
+- **Each read** costs one embedding, plus usually 0 or 1 fast-model calls (rerank; the
+  planner only when rules find nothing).
+- **Search per user is exact.** Postgres compares that user's vectors directly, which is
+  right up to tens of thousands of memories per user. Beyond about 50,000 for a single
+  user, see the options in [Docs/FIX_PLAN.md](Docs/FIX_PLAN.md) (half-precision vectors,
+  smaller dimensions, partitioning).
+- **Extraction quality depends on the fast model.** In a blind comparison on real
+  conversations, Claude Haiku 4.5, gpt-oss-120b and DeepSeek V3.2 captured about 87% of key
+  facts; smaller models captured 47 to 70%.
+
+---
+
+## Evaluation
+
+riki-memory is measured on its own scenarios first, then against public benchmarks.
+
+- **Scenario suite** ([`evals/`](evals)): 24 personal-agent scenarios (updates, counting,
+  sums, plans vs. done, dates, people, "I don't know", password privacy, forget and delete,
+  noise, user isolation), replayed through the public API with a fixed reader and judge.
+
+  ```bash
+  python evals/run.py --dry-run          # check the scenarios, no model calls
+  python evals/run.py --verbose          # run them
+  python evals/run.py --ablation         # each optional feature on and off, side by side
+  ```
+
+- **Public benchmarks** (LongMemEval, LoCoMo, BEAM, HaluMem): the plan, and why vendor
+  scores can't be compared with each other, are in [Docs/BENCHMARK.md](Docs/BENCHMARK.md).
+  No benchmark score is published yet; numbers will come with the harness to reproduce them.
+
+---
+
+## Project layout
+
+```text
+src/riki_memory/
+  service.py        RikiMemory: the public API
+  extraction.py     conversation -> memories (the extraction prompt)
+  store.py          saving, deduplication, forgetting
+  recall.py         router, planning, context building
+  retrieval.py      the four search channels and rank fusion
+  aggregation.py    exact counts, sums and averages over instances
+  temporal.py       date differences between remembered events
+  control.py        edit, delete, export/import, namespaces
+  telemetry.py      per-write reports and totals
+  vectors.py        pgvector search and per-model indexes
+  migrate.py        schema migrations (migrations/ holds the revisions)
+  cli.py            the `riki` command
+  config.py         every option, with defaults and descriptions
+evals/              our own scenario suite and runner
+longeval/           LongMemEval harness (with a model-call cache)
+tests/              unit and integration tests (real Postgres)
+Docs/               design notes: review, fix plan, benchmarks, scope model
+```
+
+---
 
 ## Development
 
 ```bash
+git clone https://github.com/16bitOni/Riki-mem.git && cd Riki-mem
 uv sync --group dev
-docker compose up -d   # Postgres + pgvector on :5433; each test gets its own database
-uv run pytest
-uv build   # dist/riki_memory-*.whl
+docker compose up -d            # Postgres + pgvector on :5433
+uv run pytest                   # every test gets its own fresh database
 ```
 
-## Publishing to PyPI
+Point the tests at another server with `RIKI_TEST_PG_URL` (the user needs `CREATEDB`).
+
+Changing a model in `models.py`? Add a migration, or `tests/test_migrations.py` will fail:
+
+```bash
+python -m riki_memory.migrate revision "describe the change" postgresql://.../scratch_db
+```
+
+Build and publish:
 
 ```bash
 uv build
-uv publish   # needs a PyPI token: uv publish --token pypi-…
+uv publish
 ```
+
+---
+
+## Contributing
+
+Contributions are welcome: bug reports, scenarios for the eval suite, providers, docs.
+
+1. Open an issue describing the problem or idea before large changes.
+2. Keep the library free of benchmark-specific behaviour: evaluation code lives in
+   `evals/` and `longeval/` and uses only the public API.
+3. Add or update tests; `uv run pytest` must pass against Postgres.
+4. Schema changes come with a migration.
+
+---
+
+## Project status
+
+**Alpha (0.1.0).** The storage layer, write path, exact counting, user data controls and
+migrations are tested (240+ tests against real Postgres). Still in progress:
+
+- Feature pruning based on the scenario suite's ablation results
+- Reading across shared namespaces (team / org memory)
+- Benchmark harness with a fixed reader and official judges, and published results
+- A hosted-service wrapper (HTTP API, auth) on top of the library
+
+---
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
+
+## Acknowledgements
+
+Extracted from [Riki](https://github.com/16bitOni/Riki), a personal AI agent, and rebuilt
+for production use. Built on [PostgreSQL](https://www.postgresql.org/),
+[pgvector](https://github.com/pgvector/pgvector), [SQLAlchemy](https://www.sqlalchemy.org/),
+[Alembic](https://alembic.sqlalchemy.org/) and [Pydantic](https://docs.pydantic.dev/).

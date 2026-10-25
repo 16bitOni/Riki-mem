@@ -54,6 +54,7 @@ async def edit_memory(
     importance: int | None = None,
     kind: str | None = None,
     tags: list[str] | None = None,
+    attributes: dict | None = None,
     event_at=UNCHANGED,
     instances: list[InstanceItem] | None = None,
     keep_instances: bool = False,
@@ -80,6 +81,8 @@ async def edit_memory(
             values["kind"] = kind
         if tags is not None:
             values["tags"] = tags
+        if attributes is not None:
+            values["attributes"] = attributes
         if event_at is not UNCHANGED:
             values["event_at"] = event_at
         async with db.session_scope() as session:
@@ -111,6 +114,7 @@ async def edit_memory(
         importance=importance or old.importance,
         event_at=old.event_at if event_at is UNCHANGED else event_at,
         tags=tags if tags is not None else (old.tags or []),
+        attributes=attributes if attributes is not None else (old.attributes or {}),
         source_key=old.source_key,
         semantic=old.wants_embedding,
         replaces=[memory_id],

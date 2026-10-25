@@ -247,6 +247,7 @@ async def save_memory(
                 event_at=data.event_at,
                 source_key=data.source_key,
                 tags=data.tags or [],
+                attributes=data.attributes or {},
                 wants_embedding=wants_vector,
                 embedding=vector,
                 embedding_model=llm.embedding_model_id if vector is not None else None,
@@ -328,11 +329,15 @@ async def forget_memory(db: Database, config: MemoryConfig, user_id: str, memory
 
 
 async def list_memories(
-    db: Database, user_id: str, *, active_only: bool = True, limit: int = 100, offset: int = 0
+    db: Database, user_id: str, *, active_only: bool = True, limit: int = 100, offset: int = 0,
+    attributes: dict | None = None,
 ) -> list[Memory]:
-    """Newest first. For admin views and debugging; not part of recall."""
+    """Newest first. ``attributes``: only memories whose attributes contain these
+    key/values (e.g. ``{"type": "medication"}``)."""
     async with db.session_scope() as session:
         stmt = select(Memory).where(Memory.user_id == user_id)
+        if attributes:
+            stmt = stmt.where(Memory.attributes.contains(attributes))
         if active_only:
             stmt = stmt.where(Memory.is_active.is_(True))
         return list(

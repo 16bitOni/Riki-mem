@@ -1,14 +1,8 @@
 """The front door. One object, one database, one LLM provider.
 
-Typical wiring in a chat loop::
+Typical wiring in a chat loop (settings from RIKI_* environment variables)::
 
-    memory = RikiMemory(
-        database_url="postgresql://riki:riki@localhost:5433/riki",
-        llm=OpenAICompatibleProvider(api_key="…", base_url="https://api.x.ai/v1",
-                                     chat_model="grok-4", fast_model="grok-4-fast",
-                                     embedding_model="text-embedding-3-small"),
-    )
-    await memory.init()
+    memory = RikiMemory.from_env()
 
     # before answering:
     context, _ = await memory.context(user_id="user_123", message=text, recent_chat=history)
@@ -18,22 +12,37 @@ Typical wiring in a chat loop::
                           turn_key=f"chat/{turn_id}")
 """
 
+import inspect
 import logging
+import os
 from datetime import datetime
 from typing import Awaitable, Callable
-
-import inspect
 
 from . import control, episode, extraction, maintenance, recall, store, telemetry
 from .config import MemoryConfig
 from .db import Database
 from .evaluation import EvalCase, run_eval
-from .llm import LLMProvider, NullProvider
+from .llm import LLMProvider, NullProvider, OpenAICompatibleProvider
 from .models import Memory
 from .schemas import MemoryCreate
 from .telemetry import WriteReport, WriteStats
 
 log = logging.getLogger(__name__)
+
+
+def read_env_file(path: str) -> dict[str, str]:
+    """``KEY=value`` lines of a .env file (comments and blank lines skipped); {} if absent."""
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except OSError:
+        return {}
+    values = {}
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip().strip("\"'")
+    return values
 
 
 class RikiMemory:
@@ -70,9 +79,55 @@ class RikiMemory:
         self.on_write = on_write
         self.write_stats = WriteStats(empty_warning_after=self.config.empty_write_warning_after)
 
+    @classmethod
+    def from_env(cls, *, env: dict[str, str] | None = None, **options) -> "RikiMemory":
+        """Build from environment variables (or ``env``), so setup is one line.
+
+        Settings come from the environment, plus a ``.env`` file in the working
+        directory if there is one (real environment variables win).
+
+        ============================  ==========================================
+        ``RIKI_DATABASE_URL``         Postgres URL (required)
+        ``RIKI_API_KEY``              model API key; without it no model is used
+        ``RIKI_BASE_URL``             OpenAI-compatible endpoint (default OpenAI)
+        ``RIKI_CHAT_MODEL``           main model (default ``gpt-4o-mini``)
+        ``RIKI_FAST_MODEL``           cheap model for extraction and planning
+        ``RIKI_EMBEDDING_MODEL``      default ``text-embedding-3-small``
+        ============================  ==========================================
+
+        ``options`` go to the constructor (``config=``, ``on_write=``, ...).
+        """
+        if env is None:
+            env = {**read_env_file(".env"), **os.environ}
+        url = env.get("RIKI_DATABASE_URL") or env.get("RIKI_DB_URL")
+        if not url:
+            raise ValueError(
+                "Set RIKI_DATABASE_URL, e.g. postgresql://riki:riki@localhost:5433/riki "
+                "(`docker compose up -d` in the riki-memory repo runs one)."
+            )
+        llm = options.pop("llm", None)
+        if llm is None and env.get("RIKI_API_KEY"):
+            chat_model = env.get("RIKI_CHAT_MODEL", "gpt-4o-mini")
+            llm = OpenAICompatibleProvider(
+                api_key=env["RIKI_API_KEY"],
+                base_url=env.get("RIKI_BASE_URL", "https://api.openai.com/v1"),
+                chat_model=chat_model,
+                fast_model=env.get("RIKI_FAST_MODEL", chat_model),
+                embedding_model=env.get("RIKI_EMBEDDING_MODEL", "text-embedding-3-small"),
+            )
+        return cls(url, llm=llm, **options)
+
     async def init(self) -> None:
-        """Create the pgvector extension, tables and indexes. Safe to call on every startup."""
+        """Set up the database (extension, migrations, indexes). Optional: the first
+        call that touches the database does it. Safe to call on every startup."""
         await self.db.init()
+
+    async def __aenter__(self) -> "RikiMemory":
+        await self.init()
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await self.close()
 
     async def close(self) -> None:
         await self.db.close()
@@ -155,15 +210,17 @@ class RikiMemory:
         return await store.get_memory(self.db, memory_id, user_id)
 
     async def list_memories(
-        self, user_id: str, *, active_only: bool = True, limit: int = 100, offset: int = 0
+        self, user_id: str, *, active_only: bool = True, limit: int = 100, offset: int = 0,
+        attributes: dict | None = None,
     ) -> list[Memory]:
-        """Newest first, ``limit`` at a time; page with ``offset``."""
+        """Newest first, ``limit`` at a time; page with ``offset``. ``attributes``
+        keeps only memories whose attributes contain these key/values."""
         return await store.list_memories(
-            self.db, user_id, active_only=active_only, limit=limit, offset=offset
+            self.db, user_id, active_only=active_only, limit=limit, offset=offset, attributes=attributes
         )
 
     async def edit(self, user_id: str, memory_id: str, **changes) -> Memory | None:
-        """Change a memory (``content``, ``importance``, ``kind``, ``tags``, ``event_at``,
+        """Change a memory (``content``, ``importance``, ``kind``, ``tags``, ``attributes``, ``event_at``,
         ``instances``, ``keep_instances``); see :func:`riki_memory.control.edit_memory`.
         A text change saves a new version and retires the old one. Returns the
         current version, or ``None`` if the memory doesn't exist."""

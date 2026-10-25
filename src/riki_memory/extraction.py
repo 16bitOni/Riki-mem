@@ -153,10 +153,13 @@ async def propose_memories(
     except Exception:
         log.warning("could not load known instances for %s; extracting without them", user.id, exc_info=True)
 
+    system = EXTRACTION_PROMPT.format(
+        name=user.name, now=(at or now_in(user.timezone)).isoformat(), timezone=user.timezone
+    )
+    if config.extraction_instructions.strip():
+        system += "\n\nAPP-SPECIFIC INSTRUCTIONS (follow these too):\n" + config.extraction_instructions.strip()
     result = await llm.chat_json(
-        system=EXTRACTION_PROMPT.format(
-            name=user.name, now=(at or now_in(user.timezone)).isoformat(), timezone=user.timezone
-        ),
+        system=system,
         user=(
             f"KNOWN MEMORIES:\n{format_memories(known)}\n\n"
             f"SAVED THIS TURN:\n{format_memories(saved_this_turn)}"
@@ -185,6 +188,7 @@ async def propose_memories(
                     tags=item.tags,
                     replaces=[r for r in item.replaces if r in shown_ids],
                     instances=item.instances,
+                    attributes=item.attributes,
                 )
             )
         except ValidationError as error:

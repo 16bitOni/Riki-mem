@@ -5,7 +5,7 @@ default that proved itself in production; change them only when you have a
 measured reason (see ``evaluation.py`` for the retrieval test harness).
 """
 
-from typing import Literal
+from typing import Literal, get_args, get_origin
 
 from pydantic import BaseModel, Field
 
@@ -28,9 +28,9 @@ class MemoryConfig(BaseModel):
         200, ge=10, le=2000, description="Most entities one graph walk may visit."
     )
     weight_keyword: float = Field(1.5, ge=0, description="How much each channel counts in rank fusion.")
-    weight_semantic: float = Field(0.6, ge=0)
-    weight_graph: float = Field(0.7, ge=0)
-    weight_time: float = Field(0.5, ge=0)
+    weight_semantic: float = Field(0.6, ge=0, description="Weight of the meaning (vector) channel in rank fusion.")
+    weight_graph: float = Field(0.7, ge=0, description="Weight of the people/places graph channel in rank fusion.")
+    weight_time: float = Field(0.5, ge=0, description="Weight of the date-window channel in rank fusion.")
     weight_tag: float = Field(1.8, ge=0, description="RRF weight for the tag retrieval channel. "
                               "High by default because tag matches are precise and exhaustive.")
     tag_similarity_threshold: float = Field(
@@ -55,7 +55,9 @@ class MemoryConfig(BaseModel):
     rerank: Literal["off", "llm"] = Field(
         "llm", description='"llm" re-orders the top candidates with the fast model.'
     )
-    rerank_candidates: int = Field(20, ge=5, le=50)
+    rerank_candidates: int = Field(
+        20, ge=5, le=50, description="How many top candidates the reranker reorders (when rerank is on)."
+    )
 
     # -- dedup ---------------------------------------------------------------
     dedup_trigram_threshold: float = Field(0.85, ge=0.5, le=1, description="Spelling-level similarity.")
@@ -64,9 +66,16 @@ class MemoryConfig(BaseModel):
     )
 
     # -- maintenance ---------------------------------------------------------
-    reembed_concurrency: int = Field(5, ge=1, le=20)
-    consolidation_min_cluster_size: int = Field(3, ge=2, le=10)
-    consolidation_similarity_threshold: float = Field(0.8, ge=0.5, le=0.99)
+    reembed_concurrency: int = Field(
+        5, ge=1, le=20, description="Embedding calls run at once by reembed_stale()."
+    )
+    consolidation_min_cluster_size: int = Field(
+        3, ge=2, le=10, description="consolidate() only merges groups of at least this many similar memories."
+    )
+    consolidation_similarity_threshold: float = Field(
+        0.8, ge=0.5, le=0.99,
+        description="How similar (cosine) memories must be for consolidate() to treat them as one group.",
+    )
     profile_refresh_after: int = Field(
         10, ge=1, description="Rebuild the user profile after this many new memories."
     )
@@ -136,3 +145,53 @@ class MemoryConfig(BaseModel):
         3, ge=1, le=5,
         description="Maximum total search steps in agentic mode (including the initial search).",
     )
+
+    # -- extraction ----------------------------------------------------------
+    extraction_instructions: str = Field(
+        "", max_length=4000,
+        description="Your app's own rules for the extractor, added to its prompt. Use it to "
+        "teach new kinds of data, e.g. 'For medications, put name, dose and schedule in "
+        "attributes.' Structured values the model fills in land in Memory.attributes.",
+    )
+
+    # -- discovering the options ---------------------------------------------
+
+    @classmethod
+    def describe(cls) -> list[dict]:
+        """Every option: section, name, type, allowed values or range, default, meaning."""
+        import inspect
+        import re
+
+        section, sections = "general", {}
+        for line in inspect.getsource(cls).splitlines():
+            if m := re.match(r"\s*# -- (.+?) -+\s*$", line):
+                section = m.group(1)
+            elif m := re.match(r"\s{4}(\w+):", line):
+                sections[m.group(1)] = section
+        rows = []
+        for name, info in cls.model_fields.items():
+            limits = {}
+            for item in info.metadata:
+                for bound in ("ge", "le", "max_length"):
+                    if getattr(item, bound, None) is not None:
+                        limits[bound] = getattr(item, bound)
+            if get_origin(info.annotation) is Literal:
+                kind, limits["choices"] = "choice", list(get_args(info.annotation))
+            else:
+                kind = getattr(info.annotation, "__name__", None) or str(info.annotation).replace("typing.", "")
+            rows.append({
+                "section": sections.get(name, "general"),
+                "name": name,
+                "type": kind,
+                "limits": limits,
+                "default": info.default,
+                "description": info.description or "",
+            })
+        return rows
+
+    def changed(self) -> dict:
+        """Only the options that differ from their defaults."""
+        return {
+            name: value for name, value in self.model_dump().items()
+            if value != type(self).model_fields[name].default
+        }

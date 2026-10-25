@@ -22,8 +22,11 @@ dependencies = [
     "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 
+[project.scripts]
+riki = "riki_memory.cli:main"
+
 [project.urls]
-Homepage = "https://github.com/16bitOni/Riki"
+Homepage = "https://github.com/16bitOni/Riki-mem"
 
 [build-system]
 requires = ["hatchling"]

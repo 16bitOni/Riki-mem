@@ -75,7 +75,12 @@ async def register_codec(conn) -> None:
         if "unknown type" not in str(exc):
             raise
         return
-    await conn.execute("SET hnsw.iterative_scan = relaxed_order")
+    try:
+        await conn.execute("SET hnsw.iterative_scan = relaxed_order")
+    except Exception:
+        # pgvector < 0.8 has no iterative scan; searches still work, the filter
+        # just can't extend an HNSW scan (exact per-user search is unaffected).
+        pass
 
 
 def index_name(table_name: str, model: str, dim: int) -> str:

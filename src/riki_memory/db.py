@@ -3,10 +3,12 @@ per ``session_scope()`` block: committed if the block finishes, rolled back if
 it raises.
 
 The data lives in Postgres (self-hosted, Neon, RDS, Supabase, ...) with the
-pgvector extension. The schema is managed by migrations (``migrate.py``). Keyword search uses Postgres full-text search
-(``keyword.py``), vector search uses pgvector HNSW indexes (``vectors.py``).
+pgvector extension. The schema is managed by migrations (``migrate.py``), run
+automatically before the first query. Keyword search uses Postgres full-text
+search (``keyword.py``), vector search uses pgvector HNSW indexes (``vectors.py``).
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -61,9 +63,20 @@ class Database:
 
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.vectors = PgVectorIndex()
+        self._ready = False
+        self._init_lock = asyncio.Lock()
 
     async def init(self) -> None:
-        """Bring the schema up to date (migrations) and build indexes. Safe on every startup."""
+        """Bring the schema up to date (migrations) and build indexes. Safe on every startup.
+
+        Optional: the first database call runs it automatically.
+        """
+        async with self._init_lock:
+            if not self._ready:
+                await self._init()
+                self._ready = True
+
+    async def _init(self) -> None:
         async with self.engine.begin() as conn:
             await self.vectors.prepare(conn)  # the vector type must exist before the tables
         # Connections opened before the extension existed have no vector codec.
@@ -78,6 +91,8 @@ class Database:
 
     @asynccontextmanager
     async def session_scope(self) -> AsyncIterator[AsyncSession]:
+        if not self._ready:
+            await self.init()
         async with self.sessions() as session:
             async with session.begin():
                 yield session
