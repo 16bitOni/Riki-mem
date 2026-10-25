@@ -122,6 +122,15 @@ async def main() -> None:
         "--skip-backfill", action="store_true",
         help="Skip category facts backfill (use when table is already populated).",
     )
+    parser.add_argument(
+        "--full-retrieval", action="store_true",
+        help="Save all retrieved contents in results JSON (not just top 5).",
+    )
+    parser.add_argument(
+        "--reingest", action="store_true",
+        help="Drop the database and re-ingest all sessions from scratch (use after "
+             "improving the extraction prompt).",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -163,6 +172,18 @@ async def main() -> None:
     if args.retrieval_mode != "single":
         config_overrides["retrieval_mode"] = args.retrieval_mode
     memory = build_memory(env, **config_overrides)
+
+    if args.reingest:
+        db_url = env_get(env, "RIKI_DB_URL", "sqlite+aiosqlite:///longeval/eval.db")
+        if "sqlite" in db_url:
+            db_path = db_url.split("///")[-1] if "///" in db_url else "longeval/eval.db"
+            import os
+            if os.path.exists(db_path):
+                os.remove(db_path)
+                print(f"  Removed existing database: {db_path}")
+        args.skip_ingest = False
+        args.skip_backfill = False
+
     await memory.init()
 
     try:
@@ -218,6 +239,10 @@ async def main() -> None:
                         "retrieved": r.retrieved_contents,
                         "hit": r.hit,
                         "rr": r.reciprocal_rank,
+                        "set_recall": r.set_recall,
+                        "answer_accuracy": r.answer_accuracy,
+                        **({"all_retrieved": r.all_retrieved_contents}
+                           if args.full_retrieval else {}),
                     }
                     for r in results
                 ],

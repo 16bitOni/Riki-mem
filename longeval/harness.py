@@ -83,6 +83,9 @@ class QuestionResult:
     retrieved_contents: list[str]
     hit: bool
     reciprocal_rank: float
+    all_retrieved_contents: list[str] = field(default_factory=list)
+    set_recall: float = 0.0
+    answer_accuracy: bool = False
 
 # ---------------------------------------------------------------------------
 # .env loader (no external deps)
@@ -399,6 +402,27 @@ def score_substring(answers: list[str], retrieved: list[str]) -> tuple[bool, flo
     return False, 0.0
 
 
+def score_set_recall(answers: list[str], all_retrieved: list[str]) -> float:
+    """Fraction of expected answers found anywhere in the full returned set.
+
+    For aggregation questions the gold answer may be spread across multiple
+    memories (e.g. 4 different instrument mentions).  This metric checks
+    coverage regardless of rank — a complete set in any order counts as 1.0.
+    """
+    if not answers:
+        return 0.0
+    found = 0
+    for a in answers:
+        a_low = a.lower()
+        a_words = _answer_words(a)
+        for content in all_retrieved:
+            c_low = content.lower()
+            if a_low in c_low or (a_words and a_words.issubset(_answer_words(content))):
+                found += 1
+                break
+    return found / len(answers)
+
+
 async def score_llm_judge(
     llm, question: str, expected: list[str], retrieved: list[str],
     question_date: str = "",
@@ -406,7 +430,8 @@ async def score_llm_judge(
     if not retrieved:
         return False, 0.0
 
-    context = "\n".join(f"[{i+1}] {m}" for i, m in enumerate(retrieved[:30]))
+    window = retrieved if _is_aggregation_judge(question) else retrieved[:30]
+    context = "\n".join(f"[{i+1}] {m}" for i, m in enumerate(window))
     expected_str = " OR ".join(expected)
 
     date_hint = (
@@ -500,32 +525,37 @@ async def run_questions(
             found, _report = await memory.recall(
                 user_id=user_id, query=q.question, not_after=not_after,
             )
-            retrieved = [m.content for m in found]
+            all_retrieved = [m.content for m in found]
         except Exception as e:
             log.warning("recall error q=%s: %s", q.question_id, e)
-            retrieved = []
+            all_retrieved = []
 
         if judge == "llm":
             hit, rr = await score_llm_judge(
-                memory.llm, q.question, q.answers, retrieved, question_date=q.question_date,
+                memory.llm, q.question, q.answers, all_retrieved, question_date=q.question_date,
             )
         elif judge == "combined":
-            hit, rr = score_substring(q.answers, retrieved)
+            hit, rr = score_substring(q.answers, all_retrieved)
             if not hit:
                 hit, rr = await score_llm_judge(
-                    memory.llm, q.question, q.answers, retrieved, question_date=q.question_date,
+                    memory.llm, q.question, q.answers, all_retrieved, question_date=q.question_date,
                 )
         else:
-            hit, rr = score_substring(q.answers, retrieved)
+            hit, rr = score_substring(q.answers, all_retrieved)
+
+        sr = score_set_recall(q.answers, all_retrieved)
 
         results.append(QuestionResult(
             question_id=q.question_id,
             category=q.category,
             question=q.question,
             expected_answers=q.answers,
-            retrieved_contents=retrieved[:5],
+            retrieved_contents=all_retrieved[:5],
             hit=hit,
             reciprocal_rank=rr,
+            all_retrieved_contents=all_retrieved,
+            set_recall=sr,
+            answer_accuracy=hit,
         ))
 
         if progress_fn:
@@ -548,6 +578,8 @@ def aggregate(results: list[QuestionResult]) -> dict:
             "count": len(items),
             "hit_rate": round(sum(1 for r in items if r.hit) / n, 3),
             "mrr": round(sum(r.reciprocal_rank for r in items) / n, 3),
+            "set_recall": round(sum(r.set_recall for r in items) / n, 3),
+            "answer_accuracy": round(sum(1 for r in items if r.answer_accuracy) / n, 3),
         }
 
     report = {"overall": metrics(results), "by_category": {}}
@@ -562,13 +594,18 @@ def format_report(report: dict, results: list[QuestionResult], verbose: bool = F
     lines.append("=" * 60)
     lines.append("  LongMemEval Results")
     lines.append("=" * 60)
-    lines.append(f"  Questions : {overall['count']}")
-    lines.append(f"  Hit Rate  : {overall['hit_rate']:.1%}")
-    lines.append(f"  MRR       : {overall['mrr']:.3f}")
+    lines.append(f"  Questions      : {overall['count']}")
+    lines.append(f"  Hit Rate       : {overall['hit_rate']:.1%}")
+    lines.append(f"  MRR            : {overall['mrr']:.3f}")
+    lines.append(f"  Set Recall     : {overall['set_recall']:.1%}")
+    lines.append(f"  Answer Accuracy: {overall['answer_accuracy']:.1%}")
     lines.append("-" * 60)
 
     for cat, m in report["by_category"].items():
-        lines.append(f"  {cat:<40s}  n={m['count']:>3d}  hit={m['hit_rate']:.1%}  mrr={m['mrr']:.3f}")
+        lines.append(
+            f"  {cat:<30s}  n={m['count']:>3d}  hit={m['hit_rate']:.1%}"
+            f"  mrr={m['mrr']:.3f}  sr={m['set_recall']:.1%}"
+        )
 
     if verbose:
         lines.append("")

@@ -30,8 +30,8 @@ from .config import MemoryConfig
 from .db import Database
 from .entities import link_entities, prune_orphaned_entities
 from .llm import LLMProvider
-from .models import CategoryFact, Memory
-from .schemas import MemoryCreate
+from .models import CategoryFact, Instance, Memory
+from .schemas import InstanceItem, MemoryCreate
 from .similarity import cosine_similarity, trigram_similarity
 from .tags import normalize_tags
 
@@ -118,6 +118,66 @@ async def _upsert_category_facts(
             log.debug("category_fact upsert skipped for memory %s category %s", memory.id, category)
 
 log = logging.getLogger(__name__)
+
+
+async def _upsert_instances(
+    session,
+    user_id: str,
+    memory: Memory,
+    instances: list[InstanceItem],
+) -> None:
+    """Write one Instance row per extracted instance (idempotent via unique constraint)."""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+    for inst in instances:
+        try:
+            stmt = (
+                sqlite_insert(Instance)
+                .values(
+                    user_id=user_id,
+                    category=inst.category,
+                    instance_key=inst.instance_key,
+                    display_name=inst.display_name,
+                    status=inst.status,
+                    date=inst.date or memory.event_at,
+                    numeric_value=inst.numeric_value,
+                    unit=inst.unit,
+                    source_memory_id=memory.id,
+                )
+                .on_conflict_do_nothing()
+            )
+            await session.execute(stmt)
+        except Exception:
+            log.debug("instance upsert skipped for memory %s instance %s", memory.id, inst.instance_key)
+
+
+async def _find_instance_duplicate(
+    session: AsyncSession, data: MemoryCreate,
+) -> Memory | None:
+    """For instance-bearing memories, check if any Instance with the same
+    (user, category, instance_key) already exists within the same calendar day.
+    If so, return the source memory — the newer prose will supersede it.
+    """
+    if not data.instances:
+        return None
+    for inst in data.instances:
+        existing = await session.scalar(
+            select(Instance).where(
+                Instance.user_id == data.user_id,
+                Instance.category == inst.category,
+                Instance.instance_key == inst.instance_key,
+            ).limit(1)
+        )
+        if existing:
+            source = await session.scalar(
+                select(Memory).where(
+                    Memory.id == existing.source_memory_id,
+                    Memory.is_active.is_(True),
+                )
+            )
+            if source:
+                return source
+    return None
 
 
 def _slot_key(value: datetime | None) -> str | None:
@@ -231,7 +291,9 @@ async def save_memory(
     # lost dedup race rolls back cleanly and the winner can be returned.
     try:
         async with db.session_scope() as session:
-            near = await _find_near_duplicate(session, db, llm, config, data, vector)
+            near = await _find_instance_duplicate(session, data)
+            if near is None:
+                near = await _find_near_duplicate(session, db, llm, config, data, vector)
             memory = Memory(
                 user_id=data.user_id,
                 kind=data.kind,
@@ -253,6 +315,9 @@ async def save_memory(
 
             if data.tags:
                 await _upsert_category_facts(session, data.user_id, memory, data.tags, data.content)
+
+            if data.instances:
+                await _upsert_instances(session, data.user_id, memory, data.instances)
 
             if config.enable_entities:
                 await link_entities(session, data.user_id, memory.id, data.entities, data.relations)

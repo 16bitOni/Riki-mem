@@ -14,10 +14,10 @@ from sqlalchemy import select
 from .config import MemoryConfig
 from .db import Database
 from .llm import LLMProvider
-from .models import Memory
+from .models import Instance, Memory
 from .profile import refresh_profile_if_stale
 from .recall import format_memories
-from .schemas import Extraction, MemoryCreate
+from .schemas import Extraction, InstanceItem, MemoryCreate
 from .store import save_memory
 from .timeutil import localize, now_in
 from .users import ensure_user
@@ -56,7 +56,41 @@ Rules:
   "model-kit", "guitar-lesson", "road-trip", "streaming-service", "aquarium", "baking",
   "charity-event", "house-hunting". Use hyphens for multi-word tags. Good tags enable
   later queries like "how many weddings" or "total spending on bike gear".
-- Return an empty list when nothing is worth saving. That is the most common correct answer."""
+- NEVER drop numbers that belong to the memory. If the user says "$250 for the helmet",
+  the memory MUST contain "$250". If "drove 6 hours", the memory MUST say "6 hours".
+- NEVER normalize tense in a way that loses occurrence information. "attended a workshop"
+  must stay past tense. "plans to buy" must NOT become "bought". "used to own" must
+  NOT become "owns". The tense encodes whether something happened vs. is planned.
+- Resolve entity references within the session: if turn 1 mentions "my guitar" and
+  turn 3 identifies it as "the Fender Stratocaster", use the specific name in the memory.
+  "My cousin's wedding" should become "Rachel and Mike's wedding" if names are given.
+- Return an empty list when nothing is worth saving. That is the most common correct answer.
+
+INSTANCE EXTRACTION (in the `instances` list alongside `memories`):
+For each memory that mentions a countable or aggregatable thing, also extract instances.
+- category: choose from this closed list: model-kit, instrument, wedding-attended,
+  doctor-visit, road-trip, camping-trip, bike-expense, aquarium-fish, fish-tank,
+  health-device, charity-event, property-viewed, game-played, movie-festival,
+  citrus, baby-born, art-event, pet, vehicle, subscription, class-taken,
+  concert-attended, book-read, recipe-made. Create a new lowercase-hyphenated
+  slug ONLY if none of these fit.
+- instance_key: normalized lowercase-hyphenated identity string. The same
+  real-world thing MUST always get the same key. "Rachel and Mike's wedding"
+  and "my cousin's wedding" (if same event) = "rachel-mike-wedding".
+  "Dr. Lee the orthopedist" = "dr-lee-orthopedics". Resolve pronouns.
+- display_name: human-readable name for this specific instance.
+- status: MANDATORY. 'occurred' for completed events/purchases/attendances.
+  'current' for things currently owned or active. 'planned' for stated future
+  intentions ("plans to return"). 'desired' for wishes ("wants to try").
+  'former' for sold/ended/no-longer-true ("sold the drum set", "used to have").
+  NEVER default to 'occurred' — match the tense of the source text.
+- numeric_value + unit: ONLY if the source text explicitly states a number.
+  Never infer amounts. "$250" → numeric_value=250, unit="USD".
+  "drove 6 hours" → numeric_value=6, unit="hours".
+- One sentence can yield zero, one, or many instances. "Bought a B-29 and a
+  Camaro model" = two instances. "Attended multiple festivals" = zero instances
+  (too vague — only extract specific named things).
+- date: when the instance occurred, if stated. Use absolute dates."""
 
 
 async def propose_memories(
@@ -88,13 +122,35 @@ async def propose_memories(
     else:
         saved_this_turn = []
 
+    # Load existing instances so the extractor can resolve identity across sessions.
+    known_instances_text = ""
+    try:
+        async with db.session_scope() as session:
+            existing_instances = (
+                await session.scalars(
+                    select(Instance)
+                    .where(Instance.user_id == user.id)
+                    .order_by(Instance.created_at.desc())
+                    .limit(100)
+                )
+            ).all()
+        if existing_instances:
+            lines = []
+            for inst in existing_instances:
+                date_str = inst.date.strftime("%Y-%m-%d") if inst.date else ""
+                lines.append(f"- [{inst.category}] {inst.instance_key} ({inst.status}{', ' + date_str if date_str else ''})")
+            known_instances_text = "\n\nKNOWN INSTANCES (use the same instance_key for the same thing):\n" + "\n".join(lines)
+    except Exception:
+        pass
+
     result = await llm.chat_json(
         system=EXTRACTION_PROMPT.format(
             name=user.name, now=(at or now_in(user.timezone)).isoformat(), timezone=user.timezone
         ),
         user=(
             f"KNOWN MEMORIES:\n{format_memories(known)}\n\n"
-            f"SAVED THIS TURN:\n{format_memories(saved_this_turn)}\n\n"
+            f"SAVED THIS TURN:\n{format_memories(saved_this_turn)}"
+            f"{known_instances_text}\n\n"
             f"{user.name}: {user_message}\nAssistant: {reply}"
         ),
         schema=Extraction,
@@ -102,6 +158,7 @@ async def propose_memories(
     )
 
     shown_ids = {str(m.id) for m in known}  # the model may only retire memories it was shown
+    instances = result.instances or []
     memories = []
     for item in result.memories:
         try:
@@ -118,6 +175,7 @@ async def propose_memories(
                     relations=item.relations,
                     tags=item.tags,
                     replaces=[r for r in item.replaces if r in shown_ids],
+                    instances=instances,
                 )
             )
         except ValidationError as error:

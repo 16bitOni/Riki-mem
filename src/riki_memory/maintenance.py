@@ -22,7 +22,7 @@ from .db import Database
 from .entities import copy_entity_links
 from .extraction import propose_memories
 from .llm import LLMProvider
-from .models import Memory, MemoryEntity
+from .models import Instance, Memory, MemoryEntity
 from .schemas import MemoryCreate
 from .similarity import cosine_similarity, trigram_similarity
 from .store import save_memory
@@ -340,6 +340,22 @@ async def consolidate_memories(
     threshold = similarity_threshold or config.consolidation_similarity_threshold
 
     groups = await _find_memory_groups(db, config, user_id)
+
+    # Exclude memories that back Instance rows — consolidation destroys the
+    # per-instance granularity that counting depends on.
+    instance_memory_ids: set[str] = set()
+    try:
+        async with db.session_scope() as session:
+            ids = (await session.scalars(
+                select(Instance.source_memory_id).where(Instance.user_id == user_id)
+            )).all()
+            instance_memory_ids = set(ids)
+    except Exception:
+        pass
+    if instance_memory_ids:
+        groups = [[m for m in g if m.id not in instance_memory_ids] for g in groups]
+        groups = [g for g in groups if len(g) >= 2]
+
     log.info("consolidation: %d candidate groups", len(groups))
 
     processed_ids: set[str] = set()

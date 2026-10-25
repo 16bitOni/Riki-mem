@@ -26,7 +26,7 @@ from sqlalchemy import select
 
 from .config import MemoryConfig
 from .db import Database
-from .heuristic import is_aggregation_query, make_heuristic_plan
+from .heuristic import extract_temporal_anchors, is_aggregation_query, is_temporal_arithmetic, make_heuristic_plan
 from .llm import LLMProvider
 from .models import CategoryFact, Memory
 from .retrieval import hybrid_search
@@ -228,6 +228,67 @@ async def _dispatch_search(
                                limit=limit)
 
 
+async def _temporal_search(
+    db: Database,
+    llm: LLMProvider,
+    config: MemoryConfig,
+    user_id: str,
+    query: str,
+    not_after: datetime | None = None,
+) -> tuple[list[Memory], dict] | None:
+    """Decompose a temporal-arithmetic question into per-anchor searches.
+
+    Returns (memories, report) with a computed date difference, or None
+    if anchor extraction fails (caller falls through to normal search).
+    """
+    anchors = extract_temporal_anchors(query)
+    if len(anchors) < 2:
+        return None
+
+    all_memories: list[Memory] = []
+    anchor_dates: list[datetime | None] = []
+
+    for anchor in anchors:
+        plan = make_heuristic_plan(anchor, config.default_timezone)
+        plan.needs_memory = True
+        plan = _apply_not_after(plan, not_after)
+        found, _ = await _dispatch_search(db, llm, config, user_id, plan, anchor, limit=5)
+        found = _filter_by_not_after(found, not_after)
+
+        best_date: datetime | None = None
+        for m in found:
+            if m.event_at is not None:
+                best_date = m.event_at
+                break
+        anchor_dates.append(best_date)
+        all_memories.extend(found)
+
+    # Dedup by memory id
+    seen = set()
+    unique = []
+    for m in all_memories:
+        if m.id not in seen:
+            seen.add(m.id)
+            unique.append(m)
+
+    report: dict = {
+        "needs_memory": True,
+        "planner": "temporal",
+        "temporal_arithmetic": True,
+        "anchors": anchors,
+        "anchor_dates": [d.isoformat() if d else None for d in anchor_dates],
+        "candidates": len(unique),
+        "returned": len(unique),
+    }
+
+    if anchor_dates[0] and anchor_dates[1]:
+        diff = abs((anchor_dates[1] - anchor_dates[0]).days)
+        report["computed_days"] = diff
+        report["computed_answer"] = f"{diff} days"
+
+    return unique, report
+
+
 async def search(
     db: Database,
     llm: LLMProvider,
@@ -252,6 +313,12 @@ async def search(
     # so it can infer temporal bounds from named events ("before Run for the Cure").
     # The heuristic escalate path short-circuits as soon as it finds *any* result,
     # which means it never generates a proper date window for counting questions.
+    # Temporal arithmetic: decompose into per-anchor searches before anything else.
+    if is_temporal_arithmetic(query or ""):
+        result = await _temporal_search(db, llm, config, user.id, query, not_after)
+        if result is not None:
+            return result
+
     is_aggregation = is_aggregation_query(query or "")
 
     if mode == "heuristic":
@@ -284,6 +351,30 @@ async def search(
         return [], {"needs_memory": False, "planner": planner}
     plan = _apply_not_after(plan, not_after)
 
+    # SQL aggregation path: bypass RRF for counting/summing questions.
+    if is_aggregation and config.enable_sql_aggregation and plan.tags:
+        from .aggregation import (
+            aggregation_to_memories,
+            execute_aggregation,
+            parse_aggregation_query,
+        )
+        agg_query = parse_aggregation_query(query, plan, not_after=not_after)
+        if agg_query:
+            result = await execute_aggregation(db, user.id, agg_query)
+            if result.evidence:
+                memories = await aggregation_to_memories(db, result.evidence)
+                memories = _filter_by_not_after(memories, not_after)
+                report = {
+                    "needs_memory": True,
+                    "planner": planner,
+                    "aggregation": True,
+                    "sql_result": result.value,
+                    "sql_count": result.count,
+                    "candidates": len(result.evidence),
+                    "returned": len(memories),
+                }
+                return memories, report
+
     # Use a higher recall limit for aggregation so all instances fit in the window.
     effective_limit = config.aggregation_recall_limit if is_aggregation else None
 
@@ -300,18 +391,6 @@ async def search(
     # recall slot holds a distinct event.
     if is_aggregation:
         found = _dedup_by_event(found)
-
-    # Category facts augmentation disabled: the tag-to-category mapping is too
-    # loose (e.g. 57 "wedding" facts when only 3 actual weddings), adding noise
-    # that confuses the judge. Re-enable once fact extraction filters out plans,
-    # interests, and preferences from actual events.
-    # if is_aggregation and plan.tags:
-    #     structured = await _category_facts_memories(db, user.id, plan.tags, not_after)
-    #     if structured:
-    #         existing_ids = {m.id for m in found}
-    #         extra = [m for m in structured if m.id not in existing_ids]
-    #         found = found + extra
-    #         report["category_facts_added"] = len(extra)
 
     return found, report
 

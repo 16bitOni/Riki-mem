@@ -64,6 +64,56 @@ def is_aggregation_query(text: str) -> bool:
     return True
 
 
+def is_temporal_arithmetic(text: str) -> bool:
+    """True for 'how many days before X', 'how long between X and Y', etc."""
+    return bool(_TEMPORAL_CALC_RE.search(text))
+
+
+_ANCHOR_BEFORE_AFTER_RE = re.compile(
+    r"(?:before|after|since)\s+(?:the\s+|my\s+)?(.+?)(?:\s+did\s+|\s+was\s+|\s+have\s+|\?|$)",
+    re.IGNORECASE,
+)
+_ANCHOR_BETWEEN_RE = re.compile(
+    r"between\s+(?:the\s+|my\s+)?(.+?)\s+and\s+(?:the\s+|my\s+)?(.+?)(?:\?|$)",
+    re.IGNORECASE,
+)
+_ANCHOR_TIME_ON_RE = re.compile(
+    r"what time\b.*?\bon\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?",
+    re.IGNORECASE,
+)
+
+
+def extract_temporal_anchors(text: str) -> list[str]:
+    """Extract the anchor phrases from a temporal arithmetic question.
+
+    Returns 1-2 anchor strings that should each be searched independently.
+    """
+    m = _ANCHOR_BETWEEN_RE.search(text)
+    if m:
+        return [m.group(1).strip(), m.group(2).strip()]
+
+    m = _ANCHOR_BEFORE_AFTER_RE.search(text)
+    if m:
+        anchor1 = m.group(1).strip()
+        remainder = text[m.end():].strip().rstrip("?").strip()
+        if not remainder:
+            remainder = text[:m.start()].strip()
+        # Try to extract the second event from the remainder
+        verb_match = re.search(
+            r"(?:did\s+I\s+|I\s+|was\s+I\s+)(.+?)(?:\?|$)", text[m.end():],
+            re.IGNORECASE,
+        )
+        if verb_match:
+            return [anchor1, verb_match.group(1).strip()]
+        return [anchor1]
+
+    m = _ANCHOR_TIME_ON_RE.search(text)
+    if m:
+        return [m.group(0).strip()]
+
+    return []
+
+
 def _tags(text: str) -> list[str]:
     """Extract likely topic tags from the query — especially for aggregation questions."""
     if not _AGGREGATION_RE.search(text):

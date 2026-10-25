@@ -104,6 +104,13 @@ class MemoryConfig(BaseModel):
         description="Minimum cosine similarity for an episode to match a query.",
     )
 
+    # -- aggregation ---------------------------------------------------------
+    enable_sql_aggregation: bool = Field(
+        True,
+        description="Route 'how many X' / 'total Y' questions to deterministic SQL "
+        "against the Instance table instead of RRF top-k text retrieval.",
+    )
+
     # -- agentic retrieval ---------------------------------------------------
     retrieval_mode: Literal["single", "agentic"] = Field(
         "single",

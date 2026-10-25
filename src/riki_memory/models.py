@@ -241,3 +241,46 @@ class CategoryFact(Base):
         ),
         Index("category_fact_user_category", "user_id", "category"),
     )
+
+
+class Instance(Base):
+    """One countable thing: an event attended, an item owned, a visit made.
+
+    Populated during the same extraction LLM call that creates Memory rows
+    (zero additional cost).  Enables deterministic SQL COUNT/SUM/AVG for
+    aggregation queries instead of LLM-counting over ranked text.
+
+    ``instance_key``: normalized identity (e.g. "fender-stratocaster"),
+    so the same real-world thing mentioned across sessions deduplicates.
+    ``status``: separates occurrences from plans/desires/former — the filter
+    that makes "how many did I attend" exclude "plans to attend".
+    """
+
+    __tablename__ = "instances"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(100))
+    instance_key: Mapped[str] = mapped_column(String(500))
+    display_name: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(20))
+    date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    numeric_value: Mapped[float | None] = mapped_column(nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_memory_id: Mapped[str] = mapped_column(
+        ForeignKey("memories.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status in ('occurred','planned','desired','former','current')",
+            name="instance_status_valid",
+        ),
+        UniqueConstraint(
+            "user_id", "category", "instance_key", "source_memory_id",
+            name="instance_user_cat_key_memory_unique",
+        ),
+        Index("instance_user_category", "user_id", "category"),
+        Index("instance_user_category_status", "user_id", "category", "status"),
+    )

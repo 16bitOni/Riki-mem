@@ -165,8 +165,77 @@ class NewMemory(BaseModel):
         return KIND_ALIASES.get(key, key if key in get_args(MemoryKind) else "fact")
 
 
+InstanceStatus = Literal["occurred", "planned", "desired", "former", "current"]
+
+INSTANCE_CATEGORIES = [
+    "model-kit", "instrument", "wedding-attended", "doctor-visit", "road-trip",
+    "camping-trip", "bike-expense", "aquarium-fish", "fish-tank", "health-device",
+    "charity-event", "property-viewed", "game-played", "movie-festival", "citrus",
+    "baby-born", "art-event", "pet", "vehicle", "subscription", "appliance",
+    "class-taken", "concert-attended", "book-read", "recipe-made",
+]
+
+
+class InstanceItem(BaseModel):
+    """One countable thing extracted from a memory for deterministic aggregation."""
+
+    category: str = Field(
+        description="Canonical category slug from the closed list, or a new slug if none fits. "
+        "Examples: 'charity-event', 'model-kit', 'wedding-attended', 'instrument', "
+        "'doctor-visit', 'bike-expense', 'property-viewed', 'fish-tank', 'game-played'."
+    )
+    instance_key: str = Field(
+        description="Normalized identity string for dedup (lowercase-hyphenated). "
+        "Examples: 'fender-stratocaster', 'rachel-mike-wedding', 'dr-lee-orthopedics'. "
+        "The same real-world thing must always get the same key."
+    )
+    display_name: str = Field(
+        description="Human-readable name. Examples: 'Fender Stratocaster', "
+        "'Rachel and Mike wedding', 'Dr. Lee (orthopedics)'."
+    )
+    status: InstanceStatus = Field(
+        description="'occurred' for completed events/purchases, 'current' for things "
+        "currently owned/active, 'planned' for future intentions, 'desired' for wishes, "
+        "'former' for sold/ended/no-longer-true."
+    )
+    date: datetime | None = Field(
+        default=None,
+        description="When the instance occurred or was acquired, if known."
+    )
+    numeric_value: float | None = Field(
+        default=None,
+        description="Numeric amount ONLY if explicitly stated in the source text "
+        "(dollars, hours, count). Never infer or guess."
+    )
+    unit: str | None = Field(
+        default=None,
+        description="Unit for numeric_value: 'USD', 'hours', 'days', 'km', 'count', etc."
+    )
+
+    @field_validator("instance_key", mode="before")
+    @classmethod
+    def _slugify_key(cls, v):
+        if not isinstance(v, str):
+            return v
+        import re
+        slug = v.strip().lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
+        return slug or v.strip().lower()
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _slugify_category(cls, v):
+        if not isinstance(v, str):
+            return v
+        import re
+        slug = v.strip().lower()
+        slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")
+        return slug or v.strip().lower()
+
+
 class Extraction(BaseModel):
     memories: list[NewMemory] = Field(default_factory=list)
+    instances: list[InstanceItem] = Field(default_factory=list)
 
     @field_validator("memories", mode="before")
     @classmethod
@@ -180,6 +249,19 @@ class Extraction(BaseModel):
                 kept.append(item if isinstance(item, NewMemory) else NewMemory.model_validate(item))
             except ValidationError as error:
                 log.warning("dropped an invalid memory from the extractor: %s", error)
+        return kept
+
+    @field_validator("instances", mode="before")
+    @classmethod
+    def _drop_invalid_instances(cls, items):
+        if not isinstance(items, list):
+            return []
+        kept = []
+        for item in items:
+            try:
+                kept.append(item if isinstance(item, InstanceItem) else InstanceItem.model_validate(item))
+            except ValidationError as error:
+                log.warning("dropped an invalid instance from the extractor: %s", error)
         return kept
 
 
@@ -230,3 +312,4 @@ class MemoryCreate(Strict):
     relations: list[RelationMention] = Field(default_factory=list, max_length=10)
     tags: list[str] = Field(default_factory=list, max_length=10)
     replaces: list[str] = Field(default_factory=list, max_length=20)
+    instances: list[InstanceItem] = Field(default_factory=list, max_length=20)
