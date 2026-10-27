@@ -50,3 +50,19 @@ def test_route(question, route):
 
 def test_pregate_off_never_returns_chitchat():
     assert route_query("hi", pregate=False) == "lookup"
+
+
+@pytest.mark.parametrize("question", [
+    "mere paas kitne plants hai?",
+    "maine kitna kharcha kiya trip pe?",
+    "আমার কতগুলো গাছ আছে?",
+    "मेरे पास कितने पौधे हैं?",
+])
+def test_counting_questions_in_hinglish_bengali_and_hindi_take_the_counting_route(question):
+    assert route_query(question) == "aggregate"
+
+
+def test_a_hinglish_count_names_what_is_counted():
+    from riki_memory.heuristic import make_heuristic_plan
+
+    assert "plants" in make_heuristic_plan("mere paas kitne plants hai?", "UTC").tags

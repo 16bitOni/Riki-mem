@@ -108,10 +108,57 @@ async def test_concurrent_writes_keep_their_own_numbers(db_url):
     try:
         await asyncio.gather(
             mem.remember("u1", "I adopted a dog named Bruno.", "Congrats!", turn_key="a"),
-            mem.remember("u2", "hello", "hi", turn_key="b"),
+            mem.remember("u2", "what's a good name for a cat?", "Mochi.", turn_key="b"),
         )
         assert sorted(r.model_calls for r in reports) == [1, 1]
         assert sum(r.proposed for r in reports) == 1
         assert mem.write_stats.writes == 2
+    finally:
+        await mem.close()
+
+
+async def test_chitchat_turns_cost_nothing_and_are_not_empty_writes(db_url):
+    reports = []
+    mem = await _mem(db_url, _server([ONE]), on_write=reports.append)
+    try:
+        assert await mem.remember("u1", "ok thanks!", "Anytime.") == []
+        assert reports[0].skipped and reports[0].model_calls == 0 and reports[0].embed_calls == 0
+        assert mem.write_stats.skipped_writes == 1 and mem.write_stats.empty_writes == 0
+    finally:
+        await mem.close()
+
+
+async def test_the_cross_encoder_reorders_with_one_rerank_request(db_url):
+    """rerank="cross_encoder": one /rerank request, no chat call, and the best-scored memory first."""
+    import httpx as _httpx
+
+    from riki_memory import MemoryCreate
+
+    seen = []
+
+    def handler(request):
+        if request.url.path.endswith("/embeddings"):
+            texts = json.loads(request.content)["input"]
+            texts = texts if isinstance(texts, list) else [texts]
+            axes = ("Paris", "Rome", "Lyon")  # distinct vectors, so the three never merge as duplicates
+            vectors = [[1.0 if a in t else 0.0 for a in axes] if any(a in t for a in axes) else [1.0, 1.0, 1.0]
+                       for t in texts]
+            return _httpx.Response(200, json={"data": [{"index": i, "embedding": v} for i, v in enumerate(vectors)]})
+        assert request.url.path.endswith("/rerank"), "no chat call expected"
+        body = json.loads(request.content)
+        seen.append(body)
+        scores = [1.0 if "Lyon" in doc else 0.1 for doc in body["documents"]]
+        return _httpx.Response(200, json={"results": [{"index": i, "relevance_score": s} for i, s in enumerate(scores)]})
+
+    provider = OpenAICompatibleProvider(api_key="k", base_url="http://fake/v1", max_retries=0, rerank_model="bge-reranker")
+    provider._client = _httpx.AsyncClient(base_url="http://fake/v1", transport=_httpx.MockTransport(handler))
+    mem = RikiMemory(database_url=db_url, llm=provider,
+                     config=MemoryConfig(planner_mode="heuristic", rerank="cross_encoder"))
+    try:
+        for text in ("Riya's sister moved to Paris.", "Riya visited Rome.", "Riya lives in Lyon now."):
+            await mem.save(MemoryCreate(user_id="u1", content=text, kind="fact"))
+        found, report = await mem.recall("u1", "Where does Riya live?")
+        assert report["reranked"] and found[0].content == "Riya lives in Lyon now."
+        assert len(seen) == 1 and seen[0]["model"] == "bge-reranker"
     finally:
         await mem.close()

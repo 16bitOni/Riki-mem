@@ -61,7 +61,9 @@ class User(Base):
     kind: Mapped[str] = mapped_column(String(20), default="user", server_default="user")
     name: Mapped[str] = mapped_column(String(200), default="")
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
-    profile: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[str] = mapped_column(Text, default="")  # the core-memory blocks, rendered
+    # {label: [{"text": ..., "from": [memory ids]}]}; see profile.py
+    blocks = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     profile_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -94,6 +96,12 @@ class Memory(Base):
     # Your app's own structured fields ({"type": "medication", "dose": "5 mg"}); filterable.
     attributes = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # When it stopped (or will stop) being true. Set on an active memory for a temporary
+    # state ("in Goa until Sunday"); set on a retired one when the world changed ("moved
+    # to Bangalore"), which keeps it as history. A reworded duplicate has none.
+    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source: Mapped[str] = mapped_column(String(12), default="stated", server_default="stated")
+    forgotten_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     superseded_by_id: Mapped[str | None] = mapped_column(
         ForeignKey("memories.id", ondelete="SET NULL")
     )
@@ -105,6 +113,7 @@ class Memory(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "content_hash", name="memory_user_content_unique"),
         CheckConstraint("kind in ('fact','preference','event','episode')", name="memory_kind_valid"),
+        CheckConstraint("source in ('stated','inferred','assistant')", name="memory_source_valid"),
         CheckConstraint("importance between 1 and 5", name="memory_importance_range"),
         CheckConstraint("length(content) > 0", name="memory_content_not_empty"),
         CheckConstraint(
@@ -249,4 +258,43 @@ class Instance(Base):
             name="instance_user_kind_subject_key_memory_unique",
         ),
         Index("instance_user_subject", "user_id", "subject"),
+    )
+
+
+TURN_STATUSES = ("pending", "processing", "done", "failed", "redacted")
+
+
+class Turn(Base):
+    """One exchange as it arrived: the raw record memories are extracted from.
+
+    Written before extraction, so a crash means a retry rather than a lost turn,
+    failures stay visible (``status='failed'``), and turns can be re-extracted
+    after a prompt or model change. ``key`` is the host's ``turn_key`` (or
+    ``turn:<id>``) and becomes the ``source_key`` of every memory from it.
+    ``known_ids``: the memories the caller showed (``None`` = look them up).
+    """
+
+    __tablename__ = "turns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    key: Mapped[str] = mapped_column(String(512))
+    user_text: Mapped[str] = mapped_column(Text)
+    reply_text: Mapped[str] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # when the exchange happened
+    known_ids = mapped_column(JSON, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "key", name="turn_user_key_unique"),
+        CheckConstraint(
+            "status in (" + ",".join(f"'{s}'" for s in TURN_STATUSES) + ")", name="turn_status_valid"
+        ),
+        Index("turn_status_created", "status", "created_at"),
+        Index("turn_user_at", "user_id", "at"),
     )

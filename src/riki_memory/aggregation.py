@@ -20,15 +20,15 @@ from .db import Database
 from .models import Instance, Memory
 from .schemas import UNIT_ALIASES, RetrievalPlan, singular, subject_slug
 from .similarity import cosine_similarity
-from .tags import get_tag_embedding
+from .tags import tag_vectors
 
 log = logging.getLogger(__name__)
 
 _OP_COUNT_RE = re.compile(
-    r"\b(how many|count|number of)\b", re.IGNORECASE
+    r"\b(how many|count|number of|kitne|kitni)\b|কতগুলো|कितने|कितनी", re.IGNORECASE
 )
 _OP_SUM_RE = re.compile(
-    r"\b(how much|total|sum|combined|altogether)\b", re.IGNORECASE
+    r"\b(how much|total|sum|combined|altogether|kitna|kul)\b|কতটা|कितना|कुल", re.IGNORECASE
 )
 _OP_AVG_RE = re.compile(
     r"\b(average|mean|avg)\b", re.IGNORECASE
@@ -46,9 +46,10 @@ _STATUS_FAMILIES: list[tuple[re.Pattern, list[str], bool]] = [
      ["planned"], False),
     (re.compile(r"\b(want(?:ed)? to|wish(?:ed)?|hop(?:e|ing) to|would like|dream(?:ing)? of)\b", re.I),
      ["desired"], False),
-    (re.compile(r"\b(currently|right now|still|do I (?:have|own)|at the moment|these days)\b", re.I),
+    (re.compile(r"\b(currently|right now|still|(?:do|did) I (?:have|own)|I (?:had|owned)|at the moment|these days)\b", re.I),
      ["current", "occurred"], True),
 ]
+# "did I have ... in August" is a state too, as of the window's end (see parse_aggregation_query).
 # Past tense still includes "current": a guitar bought and still owned was bought.
 _DEFAULT_STATUS = (["occurred", "current"], False)
 
@@ -178,14 +179,14 @@ async def candidate_subjects(
     llm, term: str, existing: set[str], threshold: float
 ) -> list[str]:
     """Stored subjects whose embedding is close to ``term``, closest first."""
-    term_vec = await get_tag_embedding(llm, subject_slug(term))
-    if term_vec is None:
+    slug = subject_slug(term)
+    vectors = await tag_vectors(llm, [slug, *existing])
+    if slug not in vectors:
         return []
     scored = []
     for subject in existing:
-        vec = await get_tag_embedding(llm, subject)
-        if vec is not None:
-            sim = cosine_similarity(term_vec, vec)
+        if subject in vectors:
+            sim = cosine_similarity(vectors[slug], vectors[subject])
             if sim >= threshold:
                 scored.append((sim, subject))
     scored.sort(reverse=True)
@@ -258,8 +259,11 @@ def parse_aggregation_query(
         status_filter=status_filter,
         current_state=current_state,
         unit=unit,
-        not_after=not_after,
-        start=plan.start,
+        # The window's end caps what is counted ("in March" stops at 31 March). A state
+        # question ("how many plants did I have in August") is as of the window's end,
+        # so things bought before August still count: no start bound then.
+        not_after=min((d for d in (plan.end, not_after) if d is not None), default=None),
+        start=None if current_state else plan.start,
     )
 
 

@@ -297,3 +297,18 @@ async def test_dedup_keeps_distinct_same_day_and_drops_repeats(mem, provider):
 
     kept = await _dedup(mem.db, mem.config, [kit_a, kit_b, again, note, note_again])
     assert [m.id for m in kept] == [kit_a.id, kit_b.id, note.id]
+
+
+async def test_a_normal_question_costs_no_model_call_and_one_embedding(db_url):
+    """The read budget: rerank is off by default and the heuristic plan finds hits,
+    so context() makes zero chat calls and embeds the question once."""
+    from conftest import FakeProvider
+
+    provider = FakeProvider()
+    async with RikiMemory(database_url=db_url, llm=provider) as mem:  # default config
+        await mem.save(MemoryCreate(user_id="u1", content="Sub's sister Riya lives in Paris.", kind="fact"))
+        before = provider.embed_calls
+        text, found = await mem.context("u1", "Where does my sister Riya live?")
+        assert provider.embed_calls - before <= 1
+        assert found and "Paris" in text
+        assert found[0].id not in text  # ids stay out of the host model's context

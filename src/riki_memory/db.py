@@ -9,6 +9,7 @@ search (``keyword.py``), vector search uses pgvector HNSW indexes (``vectors.py`
 """
 
 import asyncio
+import re
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -36,10 +37,11 @@ def _refuse_outdated_instances(sync_conn) -> None:
     ``create_all`` never alters an existing table, so an old one would only
     surface later as a failed insert on every save.
     """
+    schema = sync_conn.exec_driver_sql("SELECT current_schema()").scalar()
     inspector = inspect(sync_conn)
-    if not inspector.has_table("instances"):
+    if not inspector.has_table("instances", schema=schema):
         return
-    columns = {c["name"] for c in inspector.get_columns("instances")}
+    columns = {c["name"] for c in inspector.get_columns("instances", schema=schema)}
     if "subject" not in columns:
         raise RuntimeError(
             "This database's 'instances' table predates the kind/subject schema. "
@@ -48,8 +50,21 @@ def _refuse_outdated_instances(sync_conn) -> None:
         )
 
 
+DEFAULT_SCHEMA = "riki"
+_SCHEMA_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+
+
 class Database:
-    def __init__(self, database_url: str, pool_size: int = 5, max_overflow: int = 10) -> None:
+    """``schema``: the Postgres schema that holds every riki table (default ``riki``),
+    so names like ``users`` or ``memories`` never clash with the host app's tables."""
+
+    def __init__(
+        self, database_url: str, pool_size: int = 5, max_overflow: int = 10,
+        schema: str = DEFAULT_SCHEMA,
+    ) -> None:
+        if not _SCHEMA_RE.match(schema):
+            raise ValueError(f"schema must be a lowercase SQL identifier, got {schema!r}")
+        self.schema = schema
         self.engine = create_async_engine(
             async_url(database_url),
             pool_size=pool_size,
@@ -58,8 +73,13 @@ class Database:
         )
 
         @event.listens_for(self.engine.sync_engine, "connect")
-        def _binary_vectors(dbapi_conn, _):
+        def _on_connect(dbapi_conn, _):
             dbapi_conn.run_async(register_codec)
+            # Prepended, not replaced: extensions installed in another schema
+            # (Supabase's `extensions`) must still resolve.
+            dbapi_conn.run_async(lambda c: c.execute(
+                f"SELECT set_config('search_path', '\"{schema}\",' || current_setting('search_path'), false)"
+            ))
 
         self.sessions = async_sessionmaker(self.engine, expire_on_commit=False)
         self.vectors = PgVectorIndex()
@@ -79,9 +99,11 @@ class Database:
     async def _init(self) -> None:
         async with self.engine.begin() as conn:
             await self.vectors.prepare(conn)  # the vector type must exist before the tables
+            await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{self.schema}"')
         # Connections opened before the extension existed have no vector codec.
         await self.engine.dispose()
         async with self.engine.begin() as conn:
+            await conn.run_sync(migrate.adopt_public_tables)
             await conn.run_sync(_refuse_outdated_instances)
             await conn.run_sync(migrate.upgrade)
         await self.vectors.init(self)

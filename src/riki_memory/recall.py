@@ -45,7 +45,7 @@ from .aggregation import (
 )
 from .config import MemoryConfig
 from .db import Database
-from .heuristic import make_heuristic_plan
+from .heuristic import make_heuristic_plan, wants_history
 from .llm import LLMProvider
 from .models import Instance, Memory
 from .retrieval import hybrid_search
@@ -58,8 +58,9 @@ from .users import ensure_user
 
 log = logging.getLogger(__name__)
 
+# Static (the date goes in the user message), so providers can cache the prefix.
 PLANNER_PROMPT = """You decide how to search a person's long-term memory so an assistant can answer their latest message.
-Current date and time: {now} (timezone {timezone}).
+The current date and time are given at the top of the message.
 
 First: resolve references. If the latest message says "these companies", "that role", "the thing
 I mentioned" — look at the recent chat to figure out what they mean. Use the resolved names and
@@ -72,7 +73,8 @@ topics (not the pronouns) when filling in the fields below.
 - relation_words: relationship words ("my sister's husband's company" -> sister, husband, company). Use the user's own words.
 - tags: topic tags to search for. CRITICAL for counting or aggregation questions
   ("how many interviews?", "total spent on the renovation", "all my dentist visits"): put
-  the plain noun being counted FIRST, singular and lowercase ("interview", "renovation",
+  the plain noun being counted FIRST, singular, lowercase and in English even when the
+  message is in another language ("interview", "renovation",
   "dentist"), then
   any other useful topic labels.
 - start / end: only if the message refers to a time ("last week", "in March", "yesterday"). Use ISO 8601 with the timezone offset.
@@ -98,8 +100,11 @@ async def make_plan(
     # not to today's date (which would exclude historical conversations).
     ref_now = now or now_in(timezone)
     plan = await llm.chat_json(
-        system=PLANNER_PROMPT.format(now=ref_now.isoformat(), timezone=timezone),
-        user=f"Recent chat:\n{recent_chat or '(none)'}\n\nLatest message:\n{message}",
+        system=PLANNER_PROMPT,
+        user=(
+            f"Current date and time: {ref_now.isoformat()} (timezone {timezone})\n\n"
+            f"Recent chat:\n{recent_chat or '(none)'}\n\nLatest message:\n{message}"
+        ),
         schema=RetrievalPlan,
         fast=True,  # routing never needs the main model
     )
@@ -108,13 +113,23 @@ async def make_plan(
     return plan
 
 
-def format_memories(memories: list[Memory]) -> str:
+SHORT_ID = 8  # how much of a memory id the computed block cites (32 hex chars cost ~20 tokens)
+
+
+def format_memories(memories: list[Memory], with_ids: bool = True) -> str:
+    """One line per memory. ``with_ids`` for the extractor (it retires memories by id);
+    the host model's context leaves them out, since it gets the Memory objects too."""
     if not memories:
         return "(nothing found)"
     lines = []
     for m in memories:
         when = (m.event_at or m.created_at).strftime("%Y-%m-%d")
-        lines.append(f"- [{m.kind}, {when}] {m.content}  (id: {m.id})")
+        status = ""
+        if m.valid_to is not None:
+            until = m.valid_to.strftime("%Y-%m-%d")
+            status = f" (until {until})" if m.is_active else f" (NO LONGER TRUE since {until})"
+        label = m.kind if m.source == "stated" else f"{m.kind}, {m.source}"
+        lines.append(f"- [{label}, {when}] {m.content}{status}" + (f"  (id: {m.id})" if with_ids else ""))
     return "\n".join(lines)
 
 
@@ -124,7 +139,7 @@ def _instance_line(item: dict, reason: str | None = None) -> str:
         parts.append(item["date"])
     if item.get("value") is not None:
         parts.append(f"{item['value']:g} {item.get('unit') or ''}".strip())
-    parts.append(f"memory {item['memory_id']}")
+    parts.append(f"memory {item['memory_id'][:SHORT_ID]}")
     return "- " + " | ".join(parts)
 
 
@@ -142,7 +157,7 @@ def format_computed(computed: dict | None) -> str:
         )
         for anchor in (a, b):
             if anchor["memory_id"]:
-                lines.append(f'- "{anchor["text"]}" dated from memory {anchor["memory_id"]}')
+                lines.append(f'- "{anchor["text"]}" dated from memory {anchor["memory_id"][:SHORT_ID]}')
         return "\n".join(lines)
 
     operation = {"COUNT_DISTINCT": "COUNT", "SUM": "SUM", "AVG": "AVERAGE", "LIST": "LIST"}[computed["operation"]]
@@ -257,7 +272,8 @@ async def _temporal(
 ) -> tuple[list[Memory], dict]:
     async def search_anchor(anchor: str) -> list[Memory]:
         plan = make_heuristic_plan(anchor, user.timezone, now=not_after)
-        plan = _apply_not_after(plan.model_copy(update={"needs_memory": True}), not_after)
+        # An anchor is often a past state ("since I moved to Pune"): search history too.
+        plan = _apply_not_after(plan.model_copy(update={"needs_memory": True, "include_history": True}), not_after)
         found, _ = await _dispatch_search(db, llm, config, user.id, plan, anchor, limit=5)
         return _filter_by_not_after(found, not_after)
 
@@ -288,6 +304,8 @@ async def _lookup(
                     return _filter_by_not_after(found, not_after), report
                 log.debug("heuristic plan found nothing; escalating to the LLM planner")
         plan = await make_plan(llm, config, query, recent_chat, user.timezone, now=not_after)
+        if wants_history(query):
+            plan = plan.model_copy(update={"include_history": True})
         planner = "llm"
 
     if not plan.needs_memory:
@@ -457,11 +475,19 @@ async def build_memory_context(
         config.profile_injection == "always"
         or (config.profile_injection == "when_empty" and not memories)
     )
-    profile_block = f"## About {user.name}\n{user.profile or '(no profile yet)'}\n\n" if inject_profile else ""
+    if inject_profile:
+        profile_block = f"## About {user.name}\n{user.profile or '(no profile yet)'}\n\n"
+    else:
+        # Things the answer must never violate (allergies, diet) are always shown: a few
+        # tokens, and the one part of the profile that is costly to miss.
+        must = (user.blocks or {}).get("constraints") or []
+        profile_block = (
+            f"## {user.name} always: \n" + "\n".join(f"- {line['text']}" for line in must) + "\n\n"
+        ) if must else ""
     computed = format_computed(report.get("computed"))
     computed_block = f"{computed}\n\n" if computed else ""
     context = (
         f"{profile_block}{computed_block}"
-        f"## Memories that may be relevant to this message\n{format_memories(memories)}"
+        f"## Memories that may be relevant to this message\n{format_memories(memories, with_ids=False)}"
     )
     return context, memories

@@ -52,8 +52,11 @@ class MemoryConfig(BaseModel):
     importance_weight: float = Field(
         0.05, ge=0, le=0.3, description="Small boost per importance point above 3."
     )
-    rerank: Literal["off", "llm"] = Field(
-        "llm", description='"llm" re-orders the top candidates with the fast model.'
+    rerank: Literal["off", "cross_encoder", "llm"] = Field(
+        "off",
+        description='"cross_encoder" re-orders the top candidates with a reranking model '
+        "(RIKI_RERANK_MODEL, served at {base_url}/rerank): fast and cheap. \"llm\" uses the fast "
+        "chat model: one extra model call per question, with every candidate's text.",
     )
     rerank_candidates: int = Field(
         20, ge=5, le=50, description="How many top candidates the reranker reorders (when rerank is on)."
@@ -152,6 +155,13 @@ class MemoryConfig(BaseModel):
         description="Your app's own rules for the extractor, added to its prompt. Use it to "
         "teach new kinds of data, e.g. 'For medications, put name, dose and schedule in "
         "attributes.' Structured values the model fills in land in Memory.attributes.",
+    )
+
+    store_turns: bool = Field(
+        True,
+        description="Keep each exchange in the turn log before extracting: a crash means a retry, "
+        "not a lost turn, and reextract() can replay history after a prompt or model change. "
+        "Off: nothing raw is stored (and remember(wait=False) is unavailable).",
     )
 
     # -- discovering the options ---------------------------------------------

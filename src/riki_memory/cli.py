@@ -8,6 +8,8 @@
     riki delete-user USER             delete everything stored for USER
     riki delete-tenant TENANT         delete every namespace of a tenant
     riki upgrade                      apply schema migrations now
+    riki worker                       extract queued turns (remember(wait=False)) until stopped
+    riki serve --user me              MCP server over stdio (needs riki-mem[mcp])
 
 Settings come from RIKI_* environment variables (see ``RikiMemory.from_env``),
 or from a .env file: ``--env-file path`` (default: ./.env if it exists).
@@ -241,6 +243,15 @@ async def upgrade() -> None:
     print("schema is up to date")
 
 
+async def worker() -> None:
+    async with _memory() as memory:
+        print("processing queued turns; Ctrl+C to stop", file=sys.stderr)
+        try:
+            await memory.run_worker()
+        except asyncio.CancelledError:
+            pass
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="riki", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--env-file", default=None, help="Load RIKI_* settings from this file (default ./.env).")
@@ -266,6 +277,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("tenant")
     p.add_argument("--yes", action="store_true")
     sub.add_parser("upgrade", help="Apply schema migrations now.")
+    sub.add_parser("worker", help="Extract queued turns until stopped (Ctrl+C).")
+    p = sub.add_parser("serve", help="Run an MCP server over stdio for one user's memory.")
+    p.add_argument("--user", default=os.environ.get("RIKI_USER_ID", "me"), help="Memory namespace (default: me).")
 
     args = parser.parse_args(argv)
     load_env_file(args.env_file)
@@ -285,6 +299,12 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(delete_tenant(args.tenant, args.yes))
     elif args.command == "upgrade":
         asyncio.run(upgrade())
+    elif args.command == "worker":
+        asyncio.run(worker())
+    elif args.command == "serve":
+        from .mcp_server import serve
+
+        serve(args.user)
 
 
 if __name__ == "__main__":

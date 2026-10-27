@@ -28,7 +28,8 @@ from .config import MemoryConfig
 from .db import Database
 from .entities import prune_orphaned_entities
 from .llm import LLMProvider
-from .models import NAMESPACE_KINDS, Entity, EntityRelation, Episode, EpisodeMemory, Instance, Memory, MemoryEntity, User
+from .profile import render, without_sources
+from .models import NAMESPACE_KINDS, Entity, EntityRelation, Episode, EpisodeMemory, Instance, Memory, MemoryEntity, Turn, User
 from .schemas import InstanceItem, MemoryCreate
 from .store import save_memory
 
@@ -138,7 +139,8 @@ async def delete_memory(db: Database, user_id: str, memory_id: str) -> int:
     """Hard delete one memory and every older version of it. Returns rows deleted.
 
     Also deleted: the episode summaries that included any of them (they quote
-    the text; ``close_session`` can rebuild them), and the user's profile text
+    the text; ``close_session`` can rebuild them), the text of the logged turns
+    they came from (the turn row stays, ``redacted``), and the core-memory lines
     (rebuilt from what remains on the next refresh). Instances, entity links and
     vectors go with the rows. A newer version of the memory is not touched.
     """
@@ -156,6 +158,15 @@ async def delete_memory(db: Database, user_id: str, memory_id: str) -> int:
             ) - doomed
         if not doomed:
             return 0
+        sources = set((await session.scalars(
+            select(Memory.source_key).where(Memory.id.in_(doomed), Memory.source_key.is_not(None))
+        )).all())
+        if sources:
+            # The raw exchange says the same thing: a real delete must not leave it behind.
+            await session.execute(
+                update(Turn).where(Turn.user_id == user_id, Turn.key.in_(sources))
+                .values(user_text="", reply_text="", known_ids=None, status="redacted")
+            )
 
         episode_ids = (
             await session.scalars(select(EpisodeMemory.episode_id).where(EpisodeMemory.memory_id.in_(doomed)))
@@ -165,9 +176,11 @@ async def delete_memory(db: Database, user_id: str, memory_id: str) -> int:
         # Rows that were superseded by a deleted row keep existing only as history of it.
         await session.execute(delete(Memory).where(Memory.id.in_(doomed)))
         await prune_orphaned_entities(session, user_id)
-        await session.execute(
-            update(User).where(User.id == user_id).values(profile="", profile_updated_at=None)
-        )
+        user = await session.scalar(select(User).where(User.id == user_id))
+        # Core-memory lines written from the deleted memories go too; the rest stay.
+        # (A profile from before blocks has no sources, so it is cleared.)
+        user.blocks = without_sources(user.blocks, doomed)
+        user.profile = render(user.blocks)
     return len(doomed)
 
 
@@ -272,7 +285,8 @@ async def export_user(
     """Write one user's memory as JSONL. Returns counts per record type.
 
     Lines: one ``header``, then ``entity``, ``relation``, ``memory`` (with its
-    ``instances`` and ``entity_ids``), ``episode`` (with ``memory_ids``).
+    ``instances`` and ``entity_ids``), ``episode`` (with ``memory_ids``), ``turn``
+    (the raw exchanges from the turn log).
     Forgotten and superseded memories are included, so the history survives.
     ``since``: only memories and episodes changed after it (incremental backup;
     entities and relations are always complete, they are small).
@@ -280,7 +294,7 @@ async def export_user(
     """
     owns = not hasattr(target, "write")
     out = open(target, "w", encoding="utf-8") if owns else target
-    counts = {"entity": 0, "relation": 0, "memory": 0, "episode": 0}
+    counts = {"entity": 0, "relation": 0, "memory": 0, "episode": 0, "turn": 0}
 
     def write(kind: str, data: dict) -> None:
         out.write(json.dumps({"_type": kind, **data}, ensure_ascii=False) + "\n")
@@ -343,6 +357,12 @@ async def export_user(
                     **_plain(episode, skip=("user_id",) if include_embeddings else ("user_id", "embedding")),
                     "memory_ids": list(memory_ids),
                 })
+
+            stmt = select(Turn).where(Turn.user_id == user_id).order_by(Turn.created_at, Turn.id)
+            if since:
+                stmt = stmt.where(Turn.created_at > since)
+            for turn in (await session.scalars(stmt)).all():
+                write("turn", _plain(turn, skip=("user_id",)))
     finally:
         if owns:
             out.close()
@@ -397,7 +417,7 @@ async def import_user(
             return old
         return new_ids.setdefault(old, uuid.uuid4().hex)
 
-    counts = {"entity": 0, "relation": 0, "memory": 0, "episode": 0, "skipped_links": 0}
+    counts = {"entity": 0, "relation": 0, "memory": 0, "episode": 0, "turn": 0, "skipped_links": 0}
     superseded: dict[str, str] = {}
     pending: dict[type, list[dict]] = {}
 
@@ -415,7 +435,7 @@ async def import_user(
     async def flush(session) -> None:
         # Parents first. A parent can be skipped (this user already has the same text,
         # entity name or session), so only link to the ones that are really there.
-        for model in (Entity, Memory, Episode):
+        for model in (Entity, Memory, Episode, Turn):
             await insert_rows(session, model, pending.pop(model, []))
         children = {model: pending.pop(model, []) for model in (EntityRelation, Instance, MemoryEntity, EpisodeMemory)}
         entities = await present(session, Entity, {
@@ -438,6 +458,11 @@ async def import_user(
             counts["skipped_links"] += len(rows) - len(kept)
             await insert_rows(session, model, kept)
 
+    if as_user and user_data.get("blocks"):  # core-memory lines cite memory ids: follow the copy
+        user_data["blocks"] = {
+            label: [{**line, "from": [remap(i) for i in line.get("from") or []]} for line in lines]
+            for label, lines in user_data["blocks"].items()
+        }
     async with db.session_scope() as session:
         user_data["id"] = user_id
         await session.execute(insert(User).values(**user_data).on_conflict_do_nothing())
@@ -476,6 +501,14 @@ async def import_user(
             pending.setdefault(Episode, []).append(row)
             for memory_id in record.get("memory_ids", []):
                 pending.setdefault(EpisodeMemory, []).append({"episode_id": row["id"], "memory_id": remap(memory_id)})
+        elif kind == "turn":
+            row = _typed(Turn, record)
+            row.update(id=remap(row["id"]), user_id=user_id)
+            if row.get("known_ids") and as_user:
+                row["known_ids"] = [remap(i) for i in row["known_ids"]]
+            if row.get("status") == "processing":
+                row["status"] = "pending"  # exported mid-extraction: let a worker finish it
+            pending.setdefault(Turn, []).append(row)
         else:
             log.warning("skipping unknown record type %r", kind)
             continue

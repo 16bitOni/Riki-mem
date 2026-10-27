@@ -1,6 +1,6 @@
 [project]
 name = "Riki-mem"
-version = "0.1.0"
+version = "0.2.0"
 description = "Standalone long-term memory layer for AI agents: LLM extraction, hybrid retrieval (keyword + semantic + time + graph), dedup, and consolidation. Postgres + pgvector, bring your own LLM."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,9 @@ dependencies = [
     "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+
 [project.scripts]
 riki = "riki_memory.cli:main"
 
@@ -39,6 +42,7 @@ packages = ["src/riki_memory"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "mcp>=1.2",
 ]
 
 [tool.pytest.ini_options]

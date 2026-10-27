@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 
 MemoryKind = Literal["fact", "preference", "event", "episode"]
 EntityType = Literal["person", "place", "org", "project", "other"]
+# stated: the user said it. inferred: the extractor concluded it (a mood, an implied
+# preference). assistant: it came from the assistant's reply (advice the user received).
+MemorySource = Literal["stated", "inferred", "assistant"]
 MemoryText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 Importance = Annotated[int, Field(ge=1, le=5, description="1 = trivia ... 5 = core to who the user is")]
 
@@ -78,6 +81,11 @@ class RetrievalPlan(BaseModel):
     )
     end: datetime | None = Field(
         default=None, description="End of the time window the question refers to, if any."
+    )
+    include_history: bool = Field(
+        default=False,
+        description="True when the question is about how things were before ('used to', "
+        "'before I moved', 'my old job'): facts that are no longer true are searched too.",
     )
 
     @field_validator("start", "end", mode="before")
@@ -325,6 +333,16 @@ class NewMemory(BaseModel):
     replaces: list[str] = Field(
         default_factory=list, description="IDs of known memories this one makes outdated."
     )
+    source: MemorySource = Field(
+        default="stated",
+        description="'stated' if the user said it; 'inferred' if you concluded it from how they "
+        "spoke (moods, implied preferences); 'assistant' if it comes from the assistant's reply.",
+    )
+    valid_until: datetime | None = Field(
+        default=None,
+        description="Only for a temporary state with a known end ('in Goa until Sunday', "
+        "'on leave this week'): when it stops being true. Empty otherwise.",
+    )
     instances: list[InstanceItem] = Field(
         default_factory=list,
         description="Countable things THIS memory mentions (zero, one or many). "
@@ -410,6 +428,11 @@ class MemoryCreate(Strict):
     relations: list[RelationMention] = Field(default_factory=list, max_length=10)
     tags: list[str] = Field(default_factory=list, max_length=10)
     replaces: list[str] = Field(default_factory=list, max_length=20)
+    # When the memories in `replaces` stopped being true. Set: the world changed, and
+    # they are kept as searchable history. None: a correction (no history).
+    changed_at: AwareDatetime | None = None
+    source: MemorySource = "stated"
+    valid_to: AwareDatetime | None = None  # a temporary state ends then
     instances: list[InstanceItem] = Field(default_factory=list, max_length=20)
     # Your app's own structured fields: short keys, scalar or list-of-scalar values.
     attributes: dict[str, AttributeValue] = Field(default_factory=dict, max_length=MAX_ATTRIBUTES)

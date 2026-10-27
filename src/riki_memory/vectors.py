@@ -153,7 +153,7 @@ class PgVectorIndex:
                 conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
                 valid = await conn.scalar(text(
                     "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
-                    "WHERE c.relname = :name"
+                    "WHERE c.relname = :name AND c.relnamespace = current_schema()::regnamespace"
                 ), {"name": name})
                 if valid is False:  # an interrupted concurrent build leaves an invalid index
                     await conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {name}"))
@@ -197,10 +197,15 @@ class PgVectorIndex:
         model: str,
         limit: int,
         min_similarity: float,
+        build_index: bool = True,
     ) -> list[tuple[str, float]]:
         """``(id, cosine similarity)`` of the closest rows of ``table`` matching
-        ``clauses``, best first, at most ``limit``, none below ``min_similarity``."""
-        await self.ensure_index(session.bind, table.__tablename__, model, len(vector))
+        ``clauses``, best first, at most ``limit``, none below ``min_similarity``.
+
+        ``build_index=False`` inside a write transaction: a concurrent index build
+        waits for every open transaction, including the caller's own."""
+        if build_index:
+            await self.ensure_index(session.bind, table.__tablename__, model, len(vector))
         rows = (await session.execute(self._search_stmt(table, clauses, vector, model, limit))).all()
         scored = [(rid, 1.0 - float(dist)) for rid, dist in rows]
         scored = [pair for pair in scored if pair[1] >= min_similarity]

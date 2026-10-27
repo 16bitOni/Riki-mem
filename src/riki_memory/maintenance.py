@@ -388,3 +388,22 @@ async def consolidate_memories(
         "dry_run": dry_run,
         "preview": preview[:20] if dry_run else [],
     }
+
+
+# ---------------------------------------------------------------- expiry
+
+
+async def expire_memories(db: Database, as_of: datetime | None = None, user_id: str | None = None) -> int:
+    """Retire temporary states whose end has passed ("in Goa until Sunday", on Monday).
+
+    They stay findable as history (they were true until then). Returns how many expired.
+    """
+    as_of = as_of or datetime.now(timezone.utc)
+    scope = [Memory.user_id == user_id] if user_id else []
+    async with db.session_scope() as session:
+        result = await session.execute(
+            update(Memory)
+            .where(*scope, Memory.is_active.is_(True), Memory.valid_to.is_not(None), Memory.valid_to <= as_of)
+            .values(is_active=False)
+        )
+    return result.rowcount or 0

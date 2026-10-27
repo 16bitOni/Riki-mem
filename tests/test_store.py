@@ -45,11 +45,30 @@ async def test_same_slot_gate_keeps_different_dates(memory):
 
 
 async def test_forget_is_final_no_resurrection(memory):
-    m1 = await memory.save(make("Sub likes black coffee."))
+    m1 = await memory.save(make("Sub likes black coffee.", source_key="chat/1"))
     assert await memory.forget("u1", m1.id) is True
-    m2 = await memory.save(make("Sub likes black coffee."))
+    # a retry or replay of the same turn never brings it back
+    m2 = await memory.save(make("Sub likes black coffee.", source_key="chat/1"))
     assert m2.id == m1.id
     assert (await memory.get("u1", m2.id)).is_active is False
+
+
+async def test_a_forgotten_fact_said_again_in_a_new_turn_is_saved(memory):
+    m1 = await memory.save(make("Sub likes black coffee.", source_key="chat/1"))
+    await memory.forget("u1", m1.id)
+    m2 = await memory.save(make("Sub likes black coffee.", source_key="chat/9"))
+    assert m2.id != m1.id and m2.is_active
+    assert (await memory.get("u1", m1.id)).is_active is False  # the audit row stays
+    assert [m.id for m in await memory.list_memories("u1")] == [m2.id]
+
+
+async def test_the_same_sentence_on_two_dates_is_two_events(memory):
+    march = datetime(2026, 3, 10, tzinfo=timezone.utc)
+    april = datetime(2026, 4, 12, tzinfo=timezone.utc)
+    m1 = await memory.save(make("Sub went to the dentist.", kind="event", event_at=march))
+    m2 = await memory.save(make("Sub went to the dentist.", kind="event", event_at=april))
+    m3 = await memory.save(make("Sub went to the dentist.", kind="event", event_at=april))
+    assert m1.id != m2.id and m3.id == m2.id
 
 
 async def test_forget_hides_from_keyword_search(memory):

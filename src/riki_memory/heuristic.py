@@ -51,7 +51,10 @@ _TEMPORAL_CALC_RE = re.compile(
 )
 
 _AGGREGATION_RE = re.compile(
-    r"\b(how many|how much|total|all (?:the |my )?|every|each|count|sum)\b", re.IGNORECASE
+    # English, romanised Hindi/Hinglish ("kitne plants hai"), and Bengali/Hindi script.
+    r"\b(how many|how much|total|all (?:the |my )?|every|each|count|sum|kitne|kitni|kitna|kul)\b"
+    r"|কত|কতগুলো|কতটা|কিতনে|कितने|कितनी|कितना|कुल",
+    re.IGNORECASE,
 )
 
 
@@ -125,7 +128,7 @@ def extract_temporal_anchors(text: str) -> list[str]:
 
 
 _COUNTED_NOUN_RE = re.compile(
-    r"\b(?:how many|number of|count of|total number of|how much (?:money )?(?:did i |have i )?"
+    r"\b(?:how many|kitne|kitni|number of|count of|total number of|how much (?:money )?(?:did i |have i )?"
     r"(?:spend|spent|pay|paid|raise|raised|earn|earned) (?:on|for)|spent on|paid for)\s+"
     r"(?:different |distinct |separate |my |the |of )*"
     r"([a-z][a-z'-]*(?: [a-z][a-z'-]*)?)"
@@ -324,6 +327,19 @@ def _parse_dates(text: str, now: datetime) -> tuple[datetime | None, datetime | 
 # ------------------------------------------------------------------ plan
 
 
+_HISTORY_RE = re.compile(
+    r"\b(used to|before (?:i|we) (?:moved|left|switched|changed|started|joined)|previous(?:ly)?|"
+    r"former(?:ly)?|my old|originally|in the past|back when|any ?more|no longer|"
+    r"where did (?:i|we) (?:use to )?(?:live|work|stay)|what was my|what did (?:i|we) use)\b",
+    re.IGNORECASE,
+)
+
+
+def wants_history(message: str) -> bool:
+    """The question is about how things were, so facts no longer true are relevant."""
+    return bool(_HISTORY_RE.search(message or ""))
+
+
 def make_heuristic_plan(
     message: str, timezone: str, *, pregated: bool = False, now: datetime | None = None
 ) -> RetrievalPlan:
@@ -346,4 +362,5 @@ def make_heuristic_plan(
         tags=_tags(message),
         start=start,
         end=end,
+        include_history=wants_history(message),
     )

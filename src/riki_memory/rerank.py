@@ -1,8 +1,10 @@
-"""Optional second pass: a cheap LLM reorders the shortlist by how well each memory
-answers the question.
+"""Optional second pass: reorder the shortlist by how well each memory answers the question.
 
-Off by default (``MemoryConfig.rerank = "off"``) because it adds one model call
-per message. It can only reorder what retrieval already found, and any failure
+- ``"cross_encoder"``: a reranking model (bge-reranker, Cohere, Jina, ...) scores each
+  pair. Tens of milliseconds, a fraction of a cent, the same order every time.
+- ``"llm"``: the fast chat model picks the order. One full model call per question.
+
+Off by default. It can only reorder what retrieval already found, and any failure
 returns the original order unchanged.
 """
 
@@ -51,4 +53,19 @@ async def rerank(llm: LLMProvider, query: str, memories: list) -> list:
         return apply_order(memories, result.order)
     except Exception:
         log.exception("reranker failed; keeping the original order")
+        return memories
+
+
+async def cross_encode(llm, query: str, memories: list) -> list:
+    """Sort by the provider's ``rerank_scores``; stable, so ties keep the fused order."""
+    scorer = getattr(llm, "rerank_scores", None)
+    if len(memories) < 2 or not callable(scorer):
+        if not callable(scorer):
+            log.warning('rerank="cross_encoder" but the provider has no rerank_scores(); order unchanged')
+        return memories
+    try:
+        scores = await scorer(query, [m.content for m in memories])
+        return [m for _, m in sorted(enumerate(memories), key=lambda pair: -scores[pair[0]])]
+    except Exception:
+        log.exception("cross-encoder rerank failed; keeping the original order")
         return memories

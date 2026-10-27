@@ -82,8 +82,19 @@ and anyone can check what was included and why the tulsi was left out.
   from stored data, with evidence and exclusions.
 - **Hybrid search**: keyword (Postgres full-text), meaning (pgvector), date window and a
   people/places graph, merged with weighted rank fusion; an optional reranker.
-- **Cheap reads**: greetings never reach a model; most questions are planned without any
-  model call; one embedding per question.
+- **Cheap reads and writes**: greetings never reach a model, on either side; most
+  questions are answered with no model call and one embedding; each turn is one model call
+  with a cacheable prompt and one batched embedding.
+- **Nothing lost on a crash**: each exchange is written to a turn log before extraction;
+  retries of the same turn cost nothing, failures stay visible, and `reextract()` replays
+  history after you improve the prompt or change model.
+- **Facts over time**: "moved to Bangalore" retires "lives in Pune" but keeps it as history,
+  so "where did I live before?" works; temporary states ("in Goa until Sunday") expire.
+- **Said vs guessed**: every memory records whether the user said it, the extractor
+  inferred it, or it came from the assistant; a guess never overrules what was said.
+- **Core memory**: five short blocks (identity, preferences, constraints, people, projects),
+  edited a line at a time; constraints such as allergies are in every context.
+- **MCP server**: `riki serve` gives Claude Code, Cursor and other MCP clients the memory as tools.
 - **Deduplication with care**: exact, near-duplicate (same kind and date slot only, so
   "dentist in March" never merges with "dentist in April"), and by meaning.
 - **Your own data types**: structured `attributes` on every memory, filled by you or by
@@ -198,6 +209,7 @@ RIKI_BASE_URL=https://api.openai.com/v1      # any OpenAI-compatible endpoint
 RIKI_CHAT_MODEL=gpt-4o-mini                  # main model
 RIKI_FAST_MODEL=gpt-4o-mini                  # extraction, planning, reranking
 RIKI_EMBEDDING_MODEL=text-embedding-3-small
+RIKI_DB_SCHEMA=riki                          # optional: the Postgres schema riki's tables live in
 ```
 
 **4. Check the setup:**
@@ -358,6 +370,51 @@ Alert on `failed_writes`, and on a jump in `empty_writes`. The library also logs
 after 25 writes in a row that propose nothing without any error
 (`empty_write_warning_after`), the usual sign that the model's replies aren't understood.
 
+### Background extraction and the turn log
+
+```python
+await memory.remember(user_id, message, reply, turn_key=key, wait=False)  # a few ms: just logged
+
+# elsewhere (a task in the same app, or `riki worker` in its own process):
+await memory.run_worker()            # or: await memory.process_pending() from a cron job
+
+await memory.reextract(user_id)      # replay the log after a prompt or model change
+(await memory.health(user_id))["turns"]   # {"done": 120, "pending": 2, "failed": 0}
+```
+
+`remember()` without `wait=False` still extracts right away (and still logs the turn).
+A hard `delete()` also blanks the logged text of the turn the memory came from.
+`MemoryConfig(store_turns=False)` keeps nothing raw.
+
+### Facts over time
+
+A fact the user changes stays as history (`valid_to`). Normal questions see only what is
+true now; "used to", "before I moved", "my old ..." also search history, marked
+`(NO LONGER TRUE since ...)` in the context. Counting respects the asked-about window
+("how many concerts in March"; "how many plants did I have in August" counts what was
+owned then). `run_worker()` expires temporary states hourly; otherwise call `expire()`.
+
+### Core memory
+
+```python
+await memory.get_blocks("user_123")    # {"constraints": ["Allergic to peanuts."], ...}
+await memory.set_block("user_123", "constraints", ["Allergic to peanuts.", "Vegetarian."])
+await memory.list_memories("user_123", source="inferred")   # what was guessed, not said
+```
+
+Blocks update in the background from new memories (one fast-model call every
+`profile_refresh_after` memories, seeing only what is new). Lines cite their memories, so
+deleting a memory removes what was written from it.
+
+### MCP server
+
+```bash
+pip install "riki-mem[mcp]"
+riki serve --user me      # stdio; add it to your MCP client's config
+```
+
+Tools: `recall`, `remember`, `list_memories`, `forget`, `get_core_memory`, `set_core_memory`.
+
 ### Maintenance
 
 ```python
@@ -382,6 +439,8 @@ The `riki` command reads the same `RIKI_*` settings (or `--env-file path`).
 | `riki delete-user USER [--yes]` | Delete everything for a user (asks first). |
 | `riki delete-tenant TENANT [--yes]` | Delete every namespace of a tenant (asks first). |
 | `riki upgrade` | Apply schema migrations now (for deploy pipelines). |
+| `riki worker` | Extract queued turns (`remember(wait=False)`) until stopped. |
+| `riki serve [--user me]` | MCP server over stdio for one user's memory (`riki-mem[mcp]`). |
 
 ---
 
@@ -405,7 +464,8 @@ The options people change most:
 | Option | Default | What it controls |
 |---|---|---|
 | `planner_mode` | `"escalate"` | `heuristic` never calls a model to plan; `llm` always does; `escalate` only when rules find nothing. |
-| `rerank` | `"llm"` | Re-order the shortlist with the fast model (`"off"` saves one call per question). |
+| `rerank` | `"off"` | `"cross_encoder"`: a reranking model (`RIKI_RERANK_MODEL`, served at `{base_url}/rerank`: vLLM, TEI, LiteLLM, Cohere, Jina) re-orders the shortlist in milliseconds. `"llm"`: the fast chat model does it (one extra call per question). |
+| `store_turns` | `True` | Keep the turn log (durable writes, `wait=False`, `reextract()`). |
 | `recall_limit` | `15` | Memories handed to your agent per question. |
 | `profile_injection` | `"when_empty"` | Add the user's profile summary `always`, `never`, or only when nothing else matched. |
 | `enable_entities` | `True` | People/places graph (relations like "my sister's husband"). |
@@ -439,13 +499,17 @@ backoff and unwraps the reply formats some models use.
 
 ## Storage and upgrades
 
-Everything lives in the Postgres database you point it at, in riki-memory's own tables;
-your application's tables are never touched.
+Everything lives in the Postgres database you point it at, in its own **Postgres schema**
+(`riki` by default; `RikiMemory(..., schema="...")` or `RIKI_DB_SCHEMA`). Your app can have
+its own `users` or `memories` tables in the same database: riki never sees or touches them,
+and two apps can keep separate memory in one database by using two schemas. Databases from
+before 0.2 (tables in `public`) are moved into the schema on first start, rows intact.
 
 | Table | Holds |
 |---|---|
-| `users` | Namespaces: id, tenant, kind, name, timezone, profile summary |
-| `memories` | Content, kind, importance, date, tags, attributes, vector, history links |
+| `users` | Namespaces: id, tenant, kind, name, timezone, core-memory blocks |
+| `memories` | Content, kind, source, importance, date, valid until, tags, attributes, vector, history links |
+| `turns` | The turn log: each exchange as it arrived, with its extraction status |
 | `instances` | Countable things: kind, subject, key, status, date, amount and unit |
 | `entities`, `entity_relations`, `memory_entities` | People, places, organisations and how they relate |
 | `episodes`, `episode_memories` | Optional session summaries |
@@ -473,10 +537,15 @@ expect less on a server network):
 | Write, excluding the model call | about 50 ms per turn |
 | Write, model call (Claude Haiku 4.5) | about 1.8 to 2.7 s per turn |
 
-- **Each write** costs one fast-model call (about 3,500 input tokens: the instructions plus
-  the exchange) and one embedding per saved memory.
-- **Each read** costs one embedding, plus usually 0 or 1 fast-model calls (rerank; the
-  planner only when rules find nothing).
+- **Each write** costs one fast-model call and one batched embedding call, plus one
+  embedding to find the memories the turn may update. Chitchat turns ("ok thanks") cost
+  nothing. The extraction instructions are byte-identical on every call, so providers that
+  cache prompt prefixes (OpenAI and compatible) bill them at the cached rate; only the
+  exchange, the memories it may update and the related known instances are new tokens.
+  `WriteReport.cached_tokens` shows how much was served from the cache.
+- **Each read** costs one embedding and, by default, no model call (the planner runs only
+  when rules find nothing; rerank is opt-in). The context leaves memory ids out; the
+  `Memory` objects you get back have them.
 - **Search per user is exact.** Postgres compares that user's vectors directly, which is
   right up to tens of thousands of memories per user. Beyond about 50,000 for a single
   user, see the options in [Docs/FIX_PLAN.md](Docs/FIX_PLAN.md) (half-precision vectors,
@@ -519,6 +588,9 @@ src/riki_memory/
   aggregation.py    exact counts, sums and averages over instances
   temporal.py       date differences between remembered events
   control.py        edit, delete, export/import, namespaces
+  turns.py          the turn log and its queue
+  profile.py        core memory blocks
+  mcp_server.py     the MCP server (`riki serve`)
   telemetry.py      per-write reports and totals
   vectors.py        pgvector search and per-model indexes
   migrate.py        schema migrations (migrations/ holds the revisions)
@@ -572,8 +644,9 @@ Contributions are welcome: bug reports, scenarios for the eval suite, providers,
 
 ## Project status
 
-**Alpha (0.1.0).** The storage layer, write path, exact counting, user data controls and
-migrations are tested (240+ tests against real Postgres). Still in progress:
+**Alpha (0.2.0).** The storage layer, write path, exact counting, user data controls and
+migrations, turn log, validity over time and core memory are tested (289 tests against
+real Postgres). Still in progress:
 
 - Feature pruning based on the scenario suite's ablation results
 - Reading across shared namespaces (team / org memory)

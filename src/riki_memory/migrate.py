@@ -43,6 +43,35 @@ def include_object(obj, name, type_, reflected, compare_to) -> bool:
     return True
 
 
+def _looks_like_riki(inspector, schema: str) -> bool:
+    """riki's tables in ``schema``: a version table, or (from before migrations) a
+    ``memories`` table with riki's own columns, so a host's ``memories`` is never taken."""
+    if inspector.has_table(VERSION_TABLE, schema=schema):
+        return True
+    if not inspector.has_table("memories", schema=schema):
+        return False
+    columns = {c["name"] for c in inspector.get_columns("memories", schema=schema)}
+    return {"content_hash", "wants_embedding", "embedding_model"} <= columns
+
+
+def adopt_public_tables(connection) -> None:
+    """Move riki's tables from ``public`` (where versions before 0.2 created them) into
+    riki's own schema. ``ALTER TABLE ... SET SCHEMA`` keeps rows, indexes, constraints
+    and sequences. Only riki's tables move; anything else in ``public`` is left alone."""
+    from .models import Base
+
+    target = connection.execute(text("SELECT current_schema()")).scalar()
+    if target in (None, "public"):
+        return
+    connection.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": LOCK_ID})
+    inspector = inspect(connection)
+    if _looks_like_riki(inspector, target) or not _looks_like_riki(inspector, "public"):
+        return
+    for name in (VERSION_TABLE, "category_facts", *Base.metadata.tables):
+        if inspector.has_table(name, schema="public"):
+            connection.execute(text(f'ALTER TABLE public."{name}" SET SCHEMA "{target}"'))
+
+
 def _config(connection) -> Config:
     config = Config()
     config.set_main_option("script_location", str(MIGRATIONS))
@@ -53,8 +82,10 @@ def _config(connection) -> Config:
 def upgrade(connection) -> None:
     """Bring riki's tables to the latest schema. Takes a sync connection (``run_sync``)."""
     connection.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": LOCK_ID})
+    # has_table() without a schema follows search_path, which would see a host's public tables.
+    schema = connection.execute(text("SELECT current_schema()")).scalar()
     inspector = inspect(connection)
-    if not inspector.has_table(VERSION_TABLE) and inspector.has_table("memories"):
+    if not inspector.has_table(VERSION_TABLE, schema=schema) and _looks_like_riki(inspector, schema):
         command.stamp(_config(connection), BASELINE)  # made by create_all before migrations existed
     command.upgrade(_config(connection), "head")
 
@@ -79,7 +110,8 @@ def revisions() -> set[str]:
 
 def current(connection) -> str | None:
     """The revision this database is at (``None`` before the first upgrade)."""
-    if not inspect(connection).has_table(VERSION_TABLE):
+    schema = connection.execute(text("SELECT current_schema()")).scalar()
+    if not inspect(connection).has_table(VERSION_TABLE, schema=schema):
         return None
     return connection.execute(text(f"SELECT version_num FROM {VERSION_TABLE}")).scalar()
 

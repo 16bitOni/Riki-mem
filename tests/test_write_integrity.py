@@ -235,3 +235,108 @@ async def test_start_window_without_not_after(memory, provider):
                 instances=[_instrument("korg-piano", "occurred", date=_at(5))])
     assert await _count(memory, status_filter=["occurred"], start=_at(4)) == 1
     assert await _count(memory, status_filter=["occurred"], start=_at(6)) == 0
+
+
+# ---------- P0-A: one user's turn never leaks into another's extraction prompt ----------
+
+
+async def test_saved_this_turn_is_scoped_to_the_user(memory, provider):
+    await memory.save(MemoryCreate(user_id="other", content="Other user's secret plan.", source_key="chat-1/turn-1"))
+    seen = []
+
+    class Recorder(ScriptedExtractor):
+        async def chat_json(self, system, user, schema, *, fast=True):
+            seen.append(user)
+            return await super().chat_json(system, user, schema, fast=fast)
+
+    llm = Recorder(provider, {"memories": []})
+    await extract_and_save_turn(memory.db, llm, memory.config, "u1", "I like tea.", "Noted.",
+                                known=[], turn_key="chat-1/turn-1")
+    assert seen and "secret plan" not in seen[0]
+
+
+# ---------- 1.6 / 1.7: updates without `known`, lean and cacheable prompts, batched embeddings ----------
+
+
+class Recording(ScriptedExtractor):
+    """Records every extraction prompt and batched-embedding call; the reply may depend on the prompt."""
+
+    def __init__(self, provider, extraction):
+        super().__init__(provider, extraction)
+        self.systems, self.prompts, self.batches = [], [], []
+
+    async def embed_many(self, texts):
+        self.batches.append(list(texts))
+        return [await self._provider.embed(t) for t in texts]
+
+    async def chat_json(self, system, user, schema, *, fast=True):
+        self.systems.append(system)
+        self.prompts.append(user)
+        reply = self._extraction(user) if callable(self._extraction) else self._extraction
+        return schema.model_validate(reply)
+
+
+async def test_a_changed_fact_is_retired_without_the_caller_passing_known(memory, provider):
+    old = await _save(memory, provider, "Sub lives in Pune.", kind="fact")
+
+    def reply(prompt):
+        assert old.id in prompt, "the old fact must be shown to the extractor"
+        return {"memories": [{"content": "Sub lives in Bangalore.", "kind": "fact", "replaces": [old.id]}]}
+
+    llm = Recording(provider, reply)
+    await extract_and_save_turn(memory.db, llm, memory.config, "u1",
+                                "I moved out of Pune, I live in Bangalore now.", "Big change!")
+    retired = await memory.get("u1", old.id)
+    assert retired.is_active is False and retired.valid_to is not None  # kept as history
+    assert [m.content for m in await memory.list_memories("u1")] == ["Sub lives in Bangalore."]
+
+
+async def test_the_system_prompt_is_identical_across_users_and_days(memory, provider):
+    llm = Recording(provider, {"memories": []})
+    await extract_and_save_turn(memory.db, llm, memory.config, "u1", "I like tea.", "Noted.",
+                                at=datetime(2025, 1, 1, tzinfo=timezone.utc))
+    await extract_and_save_turn(memory.db, llm, memory.config, "u2", "I like jazz.", "Nice.",
+                                at=datetime(2026, 6, 9, tzinfo=timezone.utc))
+    assert len(llm.systems) == 2 and llm.systems[0] == llm.systems[1]
+    assert "2026-06-09" in llm.prompts[1]  # the date travels in the message instead
+
+
+async def test_only_instances_related_to_the_turn_are_sent(memory, provider):
+    await _save(memory, provider, "Sub owns a Fender guitar.", [_instrument("fender-guitar", "current")])
+    await _save(memory, provider, "Sub bought a snake plant.", [InstanceItem(
+        kind="item", subject="plant", instance_key="snake-plant", display_name="Snake plant", status="current")])
+    llm = Recording(provider, {"memories": []})
+    await extract_and_save_turn(memory.db, llm, memory.config, "u1", "My plants need repotting.", "Spring is good for it.")
+    prompt = llm.prompts[0]
+    assert "snake-plant" in prompt and "fender-guitar" not in prompt
+    assert "KNOWN SUBJECTS: instrument, plant" in prompt  # subjects are still all listed
+
+
+async def test_one_turn_is_embedded_in_one_call(memory, provider):
+    llm = Recording(provider, {"memories": [
+        {"content": "Sub adopted a dog named Bruno.", "kind": "fact", "semantic": True},
+        {"content": "Sub's sister Riya lives in Paris.", "kind": "fact", "semantic": True},
+        {"content": "Sub drinks coffee every morning.", "kind": "fact", "semantic": True},
+    ]})
+    saved = await extract_and_save_turn(memory.db, llm, memory.config, "u1",
+                                        "Lots of news: a dog, Riya moved, coffee daily.", "Wow!", known=[])
+    assert len(saved) == 3 and len(llm.batches) == 1 and len(llm.batches[0]) == 3
+
+
+# ---------- 2.3: where a memory came from ----------
+
+
+async def test_a_guess_is_labelled_and_never_overrules_what_the_user_said(memory, provider):
+    said = await _save(memory, provider, "Sub loves his job at the startup.", kind="fact")
+
+    def reply(prompt):
+        return {"memories": [{"content": "Sub seems unhappy at work.", "kind": "fact",
+                              "source": "inferred", "replaces": [said.id]}]}
+
+    await extract_and_save_turn(memory.db, Recording(provider, reply), memory.config, "u1",
+                                "Ugh, long day at the startup job.", "Hang in there.")
+    assert (await memory.get("u1", said.id)).is_active is True
+    [guess] = await memory.list_memories("u1", source="inferred")
+    assert guess.content == "Sub seems unhappy at work."
+    text, _ = await memory.context("u1", "How do I feel about work at the startup job?")
+    assert "[fact, inferred," in text

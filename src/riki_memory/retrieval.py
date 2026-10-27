@@ -66,10 +66,11 @@ def importance_boost(importance: int, weight: float) -> float:
 
 
 async def keyword_search(
-    db: Database, user_id: str, keywords: list[str], start: datetime | None, end: datetime | None
+    db: Database, user_id: str, keywords: list[str], start: datetime | None, end: datetime | None,
+    history: bool = False,
 ) -> list[str]:
     """Keyword channel: Postgres full-text search, ranked with ts_rank_cd."""
-    return await _keyword_search(db, user_id, keywords, start, end)
+    return await _keyword_search(db, user_id, keywords, start, end, history)
 
 
 async def semantic_search(
@@ -81,25 +82,26 @@ async def semantic_search(
     start: datetime | None,
     end: datetime | None,
     vector: list[float] | None = None,
+    history: bool = False,
 ) -> list[str]:
     if vector is None:
         vector = await llm.embed(text_query)
     async with db.session_scope() as session:
         # Only vectors from the current model are compared (see vectors.py).
         scored = await db.vectors.nearest(
-            session, Memory, live_clauses(user_id, start, end), vector,
+            session, Memory, live_clauses(user_id, start, end, history), vector,
             llm.embedding_model_id, CHANNEL_DEPTH, config.min_similarity,
         )
     return [mid for mid, _ in scored]
 
 
 async def time_window(
-    db: Database, user_id: str, start: datetime | None, end: datetime | None
+    db: Database, user_id: str, start: datetime | None, end: datetime | None, history: bool = False
 ) -> list[str]:
     async with db.session_scope() as session:
         stmt = (
             select(Memory.id)
-            .where(*live_clauses(user_id, start, end))
+            .where(*live_clauses(user_id, start, end, history))
             .order_by(
                 Memory.importance.desc(),
                 func.coalesce(Memory.event_at, Memory.created_at).desc(),
@@ -110,7 +112,8 @@ async def time_window(
 
 
 async def graph_search(
-    db: Database, config: MemoryConfig, user_id: str, names: list[str], relation_words=()
+    db: Database, config: MemoryConfig, user_id: str, names: list[str], relation_words=(),
+    history: bool = False,
 ) -> list[str]:
     """Memories about people/places/projects connected to the question, up to
     `graph_max_hops` away.
@@ -185,7 +188,7 @@ async def graph_search(
             select(Memory.id)
             .join(MemoryEntity, MemoryEntity.memory_id == Memory.id)
             .join(closest, closest.c.entity_id == MemoryEntity.entity_id)
-            .where(*live_clauses(user_id, None, None))
+            .where(*live_clauses(user_id, None, None, history))
             .group_by(Memory.id, Memory.importance, Memory.created_at)
             .order_by(hops, Memory.importance.desc(), Memory.created_at.desc())
             .limit(CHANNEL_DEPTH)
@@ -309,6 +312,7 @@ async def hybrid_search(
     dashboard's Retrieval tab read from trace spans.
     """
     limit = limit or config.recall_limit
+    history = plan.include_history
 
     # Embed once, share the vector between semantic and episode channels.
     query_vector = None
@@ -321,16 +325,16 @@ async def hybrid_search(
 
     channels = {}
     if plan.keywords:
-        channels["keyword"] = keyword_search(db, user_id, plan.keywords, None, None)
+        channels["keyword"] = keyword_search(db, user_id, plan.keywords, None, None, history)
     if plan.semantic_query and query_vector is not None:
         channels["semantic"] = semantic_search(
             db, llm, config, user_id, plan.semantic_query, None, None,
-            vector=query_vector,
+            vector=query_vector, history=history,
         )
     if plan.start or plan.end:
-        channels["time"] = time_window(db, user_id, plan.start, plan.end)
+        channels["time"] = time_window(db, user_id, plan.start, plan.end, history)
     if config.enable_entities and (plan.entities or plan.relation_words):
-        channels["graph"] = graph_search(db, config, user_id, plan.entities, plan.relation_words)
+        channels["graph"] = graph_search(db, config, user_id, plan.entities, plan.relation_words, history)
     if config.enable_episodes and plan.semantic_query and query_vector is not None:
         channels["episode"] = episode_search(
             db, llm, config, user_id, plan.semantic_query,
@@ -374,7 +378,7 @@ async def hybrid_search(
     if not scores:
         return [], report
 
-    use_reranker = bool(config.rerank == "llm" and rerank_query)
+    use_reranker = bool(config.rerank != "off" and rerank_query)
     shortlist = max(limit, config.rerank_candidates) if use_reranker else limit * 2
     candidate_ids = sorted(scores, key=lambda i: scores[i], reverse=True)[:shortlist]
 
@@ -388,9 +392,10 @@ async def hybrid_search(
     before_rerank = [m.id for m in ranked]
 
     if use_reranker:
-        from .rerank import rerank  # local import: the LLM stack is only needed when enabled
+        from .rerank import cross_encode, rerank  # local import: only needed when enabled
 
-        ranked = await rerank(llm, rerank_query or "", ranked)
+        reorder = cross_encode if config.rerank == "cross_encoder" else rerank
+        ranked = await reorder(llm, rerank_query or "", ranked)
         report["reranked"] = True
     final = ranked[:limit]
 

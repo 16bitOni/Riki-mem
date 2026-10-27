@@ -19,11 +19,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import undefer
 
 from .config import MemoryConfig
 from .db import Database
@@ -31,7 +30,6 @@ from .entities import link_entities, prune_orphaned_entities
 from .llm import LLMProvider
 from .models import Instance, Memory, User
 from .schemas import InstanceItem, MemoryCreate
-from .similarity import cosine_similarity, trigram_similarity
 from .tags import normalize_subjects, normalize_tags
 
 log = logging.getLogger(__name__)
@@ -131,46 +129,41 @@ async def _find_near_duplicate(
 
     A candidate must be this user's, still active, the same kind, and about the
     same date (so "dentist on 10 March" is never merged with "dentist on
-    12 April"). Two checks: similar spelling (trigrams, for every memory), then
-    similar meaning (vectors — only for memories that have one, made by the
-    current embedding model).
+    12 April"). Two checks, both inside Postgres so nothing but the winner is
+    loaded: similar spelling (pg_trgm, every memory), then similar meaning
+    (pgvector, only vectors made by the current embedding model).
     """
-    slot = _slot_key(data.event_at)
-    candidates = (
-        await session.scalars(
-            select(Memory)
-            .where(
-                Memory.user_id == data.user_id,
-                Memory.is_active.is_(True),
-                Memory.kind == data.kind,
-            )
-            .options(undefer(Memory.embedding))
-        )
-    ).all()
-    candidates = [m for m in candidates if _slot_key(m.event_at) == slot]
-    if not candidates:
-        return None
-
-    scored = [
-        (m, trigram_similarity(m.content, data.content)) for m in candidates
+    when = data.event_at
+    if when is not None and when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    same_slot = [
+        Memory.user_id == data.user_id,
+        Memory.is_active.is_(True),
+        Memory.kind == data.kind,
+        Memory.event_at.is_(None) if when is None else Memory.event_at == when,
     ]
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    best, best_score = scored[0]
-    if best_score >= config.dedup_trigram_threshold:
-        return best
+    spelling = func.similarity(Memory.content, data.content)
+    best = (await session.execute(
+        select(Memory, spelling).where(*same_slot).order_by(spelling.desc()).limit(1)
+    )).first()
+    if best is None:
+        return None
+    if best[1] >= config.dedup_trigram_threshold:
+        return best[0]
     if vector is None:
         return None
+    nearest = await db.vectors.nearest(
+        session, Memory, same_slot, vector, llm.embedding_model_id, 1, config.dedup_vector_threshold,
+        build_index=False,
+    )
+    return await session.get(Memory, nearest[0][0]) if nearest else None
 
-    # Meaning-level check, restricted to vectors from the current model so we
-    # never compare embeddings made by different models.
-    embedded = [m for m in candidates if m.embedding and m.embedding_model == llm.embedding_model_id]
-    best_vec: Memory | None = None
-    best_sim = config.dedup_vector_threshold
-    for m in embedded:
-        sim = cosine_similarity(m.embedding, vector)
-        if sim >= best_sim:
-            best_sim, best_vec = sim, m
-    return best_vec
+
+def memory_hash(data: MemoryCreate) -> str:
+    """Exact-duplicate identity: same kind, same date slot, same text (case-insensitive).
+    The date is part of it so "went to the dentist" on two days is two visits."""
+    key = f"{data.kind}|{_slot_key(data.event_at) or ''}|{data.content.lower()}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
 async def save_memory(
@@ -179,11 +172,14 @@ async def save_memory(
     config: MemoryConfig,
     data: MemoryCreate,
     on_important: Callable[[Memory], Awaitable[None]] | None = None,
+    vector: list[float] | None = None,
 ) -> Memory:
-    """Save one memory and return it.
+    """Save one memory and return it. ``vector``: its embedding, if the caller
+    already made it (extraction embeds a whole turn in one call).
 
-    - The same sentence twice returns the first one (without resurrecting it
-      if it was forgotten).
+    - The same sentence (same kind and date) twice returns the first one. A
+      forgotten memory is not brought back by a retry of its own turn; said
+      again in a new turn, it is saved as a new memory.
     - A near-duplicate (same thing, worded differently) is replaced by the
       newer wording; the older row is retired, not deleted, and the higher
       importance of the two is kept.
@@ -207,21 +203,28 @@ async def save_memory(
             for inst, subject in zip(data.instances, subjects)
         ]})
 
-    content_hash = hashlib.sha256(data.content.lower().encode("utf-8")).hexdigest()
+    content_hash = memory_hash(data)
 
     # 1. Exact duplicate? Answer before paying for an embedding.
     async with db.session_scope() as session:
         existing = await session.scalar(
             select(Memory).where(Memory.user_id == data.user_id, Memory.content_hash == content_hash)
         )
-        if existing:
-            # Deliberately NOT reactivated: the user may have forgotten this on purpose.
+        if existing and (existing.is_active or (
+            data.source_key is not None and existing.source_key == data.source_key
+        )):
+            # A retry of the turn that produced a forgotten memory must not bring it back.
             return existing
+        if existing:
+            # Forgotten or replaced, and now said again in a new turn: a new statement.
+            # The old row stays for audit; it only gives up its hash.
+            existing.content_hash = hashlib.sha256(f"retired|{existing.id}".encode()).hexdigest()
 
     # 2. Embed outside any transaction (a slow network call must not hold the database).
     wants_vector = data.semantic if data.semantic is not None else config.embed_all_kinds
-    vector: list[float] | None = None
-    if wants_vector:
+    if not wants_vector:
+        vector = None
+    elif vector is None:
         try:
             vector = await llm.embed(data.content)
         except Exception:
@@ -248,6 +251,8 @@ async def save_memory(
                 source_key=data.source_key,
                 tags=data.tags or [],
                 attributes=data.attributes or {},
+                valid_to=data.valid_to,
+                source=data.source,
                 wants_embedding=wants_vector,
                 embedding=vector,
                 embedding_model=llm.embedding_model_id if vector is not None else None,
@@ -273,6 +278,15 @@ async def save_memory(
                     .where(Memory.id.in_(retired_ids), Memory.user_id == data.user_id)
                     .values(is_active=False, superseded_by_id=memory.id)
                 )
+                changed = [rid for rid in data.replaces if rid in retired_ids]
+                if data.changed_at and changed:
+                    # No longer true, but it was: keep it findable as history.
+                    await session.execute(
+                        update(Memory)
+                        .where(Memory.id.in_(changed), Memory.user_id == data.user_id,
+                               Memory.valid_to.is_(None))
+                        .values(valid_to=data.changed_at)
+                    )
                 await _repoint_instances(session, data.user_id, retired_ids, memory.id)
     except IntegrityError:
         # Lost a race with an identical save: return the winner instead of crashing.
@@ -315,7 +329,7 @@ async def forget_memory(db: Database, config: MemoryConfig, user_id: str, memory
         result = await session.execute(
             update(Memory)
             .where(Memory.id == memory_id, Memory.user_id == user_id)
-            .values(is_active=False)
+            .values(is_active=False, forgotten_at=datetime.now(timezone.utc))
         )
         if result.rowcount:
             await session.execute(
@@ -330,12 +344,15 @@ async def forget_memory(db: Database, config: MemoryConfig, user_id: str, memory
 
 async def list_memories(
     db: Database, user_id: str, *, active_only: bool = True, limit: int = 100, offset: int = 0,
-    attributes: dict | None = None,
+    attributes: dict | None = None, source: str | None = None,
 ) -> list[Memory]:
     """Newest first. ``attributes``: only memories whose attributes contain these
-    key/values (e.g. ``{"type": "medication"}``)."""
+    key/values (e.g. ``{"type": "medication"}``). ``source``: only ``"stated"``,
+    ``"inferred"`` (what was guessed about the user) or ``"assistant"`` memories."""
     async with db.session_scope() as session:
         stmt = select(Memory).where(Memory.user_id == user_id)
+        if source:
+            stmt = stmt.where(Memory.source == source)
         if attributes:
             stmt = stmt.where(Memory.attributes.contains(attributes))
         if active_only:

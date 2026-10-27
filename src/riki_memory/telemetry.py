@@ -35,6 +35,8 @@ class WriteReport:
     embed_calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0  # prompt tokens the provider served from its prompt cache
+    skipped: bool = False  # nothing worth extracting (chitchat): no model call was made
     latency_ms: float = 0.0
 
     @property
@@ -49,12 +51,19 @@ def _report() -> "WriteReport | None":
     return _current.get()
 
 
-def record_model_call(prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+def record_model_call(prompt_tokens: int = 0, completion_tokens: int = 0, cached_tokens: int = 0) -> None:
     report = _report()
     if report is not None:
         report.model_calls += 1
         report.prompt_tokens += prompt_tokens or 0
         report.completion_tokens += completion_tokens or 0
+        report.cached_tokens += cached_tokens or 0
+
+
+def record_skipped() -> None:
+    report = _report()
+    if report is not None:
+        report.skipped = True
 
 
 def record_embed_call() -> None:
@@ -116,6 +125,8 @@ class WriteStats:
     embed_calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0
+    skipped_writes: int = 0
     latency_ms_total: float = 0.0
     last_error: str | None = None
 
@@ -128,11 +139,14 @@ class WriteStats:
         self.embed_calls += report.embed_calls
         self.prompt_tokens += report.prompt_tokens
         self.completion_tokens += report.completion_tokens
+        self.cached_tokens += report.cached_tokens
         self.latency_ms_total += report.latency_ms
         if not report.ok:
             self.failed_writes += 1
             self.last_error = report.errors[-1] if report.errors else "unknown error"
             self.consecutive_empty = 0
+        elif report.skipped:
+            self.skipped_writes += 1  # chitchat skipped on purpose; not a sign of a broken model
         elif report.proposed == 0:
             self.empty_writes += 1
             self.consecutive_empty += 1

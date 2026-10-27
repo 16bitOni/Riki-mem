@@ -91,7 +91,12 @@ class OpenAICompatibleProvider:
         embedding_model: str = "text-embedding-3-small",
         timeout: float = 120.0,
         max_retries: int = 6,
+        rerank_model: str | None = None,
     ) -> None:
+        """``rerank_model``: a cross-encoder served at ``{base_url}/rerank`` (the
+        Cohere/Jina format that vLLM, TEI, LiteLLM and those APIs speak), used when
+        ``MemoryConfig.rerank = "cross_encoder"``."""
+        self._rerank_model = rerank_model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._chat_model = chat_model
@@ -135,9 +140,14 @@ class OpenAICompatibleProvider:
                     data = response.json()
                     if path == "/embeddings":
                         telemetry.record_embed_call()
+                    elif path == "/rerank":
+                        pass
                     else:
                         usage = data.get("usage") or {}
-                        telemetry.record_model_call(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+                        telemetry.record_model_call(
+                            usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
+                            (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0),
+                        )
                     return data
                 wait = _backoff(attempt, response.headers.get("retry-after"))
                 log.warning("%s returned %d; retry %d in %.1fs", path, response.status_code, attempt + 1, wait)
@@ -184,6 +194,35 @@ class OpenAICompatibleProvider:
     async def embed(self, text: str) -> list[float]:
         data = await self._post("/embeddings", {"model": self._embedding_model, "input": text})
         return [float(x) for x in data["data"][0]["embedding"]]
+
+    async def rerank_scores(self, query: str, documents: list[str]) -> list[float]:
+        """Relevance of each document to ``query`` from the cross-encoder (higher is better)."""
+        if not self._rerank_model:
+            raise RuntimeError("no rerank_model configured (RIKI_RERANK_MODEL)")
+        data = await self._post("/rerank", {"model": self._rerank_model, "query": query, "documents": documents})
+        scores = [0.0] * len(documents)
+        for row in data.get("results") or data.get("data") or []:
+            scores[row["index"]] = float(row.get("relevance_score", row.get("score", 0.0)))
+        return scores
+
+    async def embed_many(self, texts: list[str]) -> list[list[float]]:
+        """One request for several texts (the OpenAI embeddings API takes a list)."""
+        if not texts:
+            return []
+        data = await self._post("/embeddings", {"model": self._embedding_model, "input": list(texts)})
+        rows = sorted(data["data"], key=lambda row: row.get("index", 0))
+        return [[float(x) for x in row["embedding"]] for row in rows]
+
+
+async def embed_texts(llm, texts: list[str]) -> list[list[float]]:
+    """Embed several texts: one batched call when the provider has ``embed_many``,
+    otherwise ``embed`` per text, in parallel (custom providers need not implement it)."""
+    if not texts:
+        return []
+    many = getattr(llm, "embed_many", None)
+    if callable(many):
+        return await many(list(texts))
+    return list(await asyncio.gather(*(llm.embed(t) for t in texts)))
 
 
 def _backoff(attempt: int, retry_after: str | None) -> float:

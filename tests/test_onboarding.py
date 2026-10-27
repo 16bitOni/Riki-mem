@@ -54,13 +54,13 @@ def test_every_option_is_described_with_its_default():
     rows = {row["name"]: row for row in MemoryConfig.describe()}
     assert set(rows) == set(MemoryConfig.model_fields)
     assert all(row["description"] for row in rows.values())
-    assert rows["rerank"]["limits"]["choices"] == ["off", "llm"]
+    assert rows["rerank"]["limits"]["choices"] == ["off", "cross_encoder", "llm"]
     assert rows["recall_limit"]["default"] == 15 and rows["recall_limit"]["section"] == "retrieval"
 
 
 def test_changed_lists_only_overrides():
     assert MemoryConfig().changed() == {}
-    assert MemoryConfig(rerank="off", recall_limit=5).changed() == {"rerank": "off", "recall_limit": 5}
+    assert MemoryConfig(rerank="llm", recall_limit=5).changed() == {"rerank": "llm", "recall_limit": 5}
 
 
 # ---------- the app's own data ----------

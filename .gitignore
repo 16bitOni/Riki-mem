@@ -17,5 +17,5 @@ build/
 results_*.json
 longeval/results/
 longeval/cache/
-Docsevals/results*.json
+evals/results*.json
 Docs
