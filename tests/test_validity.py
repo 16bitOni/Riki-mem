@@ -103,3 +103,29 @@ async def test_a_hinglish_count_is_answered_from_the_records(mem):
             InstanceItem(kind="item", subject="plant", instance_key=key, display_name=key, status="current")]))
     _, report = await mem.recall("u1", "mere paas kitne plants hai?")
     assert report["route"] == "aggregate" and report["sql_result"] == "2"
+
+
+async def test_a_scheduled_interview_whose_date_passed_counts_as_done(mem):
+    def interview(key, status, day):
+        return MemoryCreate(user_id="u1", content=f"Sub's {key} interview ({status}).", kind="event", event_at=day,
+                            instances=[InstanceItem(kind="event", subject="interview", instance_key=key,
+                                                    display_name=key.title(), status=status, date=day)])
+
+    await mem.save(interview("swiggy", "occurred", _at(8, 18)))
+    await mem.save(interview("zerodha", "planned", _at(8, 24)))   # "on Monday", never confirmed
+    await mem.save(interview("freshworks", "planned", _at(8, 27)))
+    await mem.save(interview("google", "planned", _at(12, 1)))    # still in the future
+    text, _ = await mem.context("u1", "How many interviews have I had?", at=_at(10, 27))
+    assert "= 3" in text and "Zerodha | planned, date passed" in text
+
+
+async def test_counting_also_shows_memories_the_records_missed(mem):
+    def bought(content, key, value, subject):
+        return MemoryCreate(user_id="u1", content=content, kind="event", event_at=_at(8, 1), instances=[
+            InstanceItem(kind="item", subject=subject, instance_key=key, display_name=key,
+                         status="occurred", numeric_value=value, unit="USD")])
+
+    await mem.save(bought("Sub spent $450 on paint for the living room makeover.", "paint", 450, "renovation"))
+    await mem.save(bought("Sub bought a sofa for the living room makeover for $1,200.", "sofa", 1200, "sofa"))
+    text, _ = await mem.context("u1", "How much have I spent on the renovation for the living room makeover?")
+    assert "$1,200" in text  # not in the SUM's records, but in front of the reader all the same

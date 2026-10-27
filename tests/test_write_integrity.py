@@ -340,3 +340,50 @@ async def test_a_guess_is_labelled_and_never_overrules_what_the_user_said(memory
     assert guess.content == "Sub seems unhappy at work."
     text, _ = await memory.context("u1", "How do I feel about work at the startup job?")
     assert "[fact, inferred," in text
+
+
+async def test_a_core_fact_reaches_core_memory_on_the_first_turn(memory, provider):
+    llm = Recording(provider, {"memories": [
+        {"content": "Sub does not eat eggs.", "kind": "preference", "core": "constraints"},
+        {"content": "Sub had toast today.", "kind": "event"},
+    ]})
+    await extract_and_save_turn(memory.db, llm, memory.config, "u1", "No eggs for me, ever. Toast today.", "Noted.")
+    assert await memory.get_blocks("u1") == {"constraints": ["Sub does not eat eggs."]}
+    memory.config = memory.config.model_copy(update={"planner_mode": "heuristic"})
+    text, _ = await memory.context("u1", "Suggest an omelette recipe?")
+    assert "Sub does not eat eggs." in text  # constraints are in every context
+
+
+async def test_a_crowded_memory_keeps_its_first_ten_entities(memory, provider):
+    many = [{"name": f"Guest {i}", "type": "person"} for i in range(18)]
+    llm = Recording(provider, {"memories": [{"content": "Sub hosted 18 guests at dinner.", "kind": "event",
+                                             "entities": many}]})
+    saved = await extract_and_save_turn(memory.db, llm, memory.config, "u1", "Big dinner party!", "Fun!")
+    assert len(saved) == 1
+
+
+def test_the_extraction_schema_is_sent_without_descriptions():
+    import json as _json
+
+    import httpx as _httpx
+
+    from riki_memory.llm import OpenAICompatibleProvider
+    from riki_memory.schemas import Extraction, RetrievalPlan
+
+    sent = []
+
+    def handler(request):
+        sent.append(_json.loads(request.content)["response_format"]["json_schema"]["schema"])
+        return _httpx.Response(200, json={"choices": [{"message": {"content": '{"memories": [], "needs_memory": false}'}}]})
+
+    async def run():
+        p = OpenAICompatibleProvider(api_key="k", base_url="http://fake/v1", max_retries=0)
+        p._client = _httpx.AsyncClient(base_url="http://fake/v1", transport=_httpx.MockTransport(handler))
+        await p.chat_json("s", "u", Extraction)
+        await p.chat_json("s", "u", RetrievalPlan)
+
+    import asyncio as _asyncio
+
+    _asyncio.run(run())
+    assert '"description"' not in _json.dumps(sent[0]) and '"enum"' in _json.dumps(sent[0])
+    assert '"description"' in _json.dumps(sent[1])  # other schemas keep theirs

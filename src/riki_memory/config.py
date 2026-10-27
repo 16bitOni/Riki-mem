@@ -31,8 +31,6 @@ class MemoryConfig(BaseModel):
     weight_semantic: float = Field(0.6, ge=0, description="Weight of the meaning (vector) channel in rank fusion.")
     weight_graph: float = Field(0.7, ge=0, description="Weight of the people/places graph channel in rank fusion.")
     weight_time: float = Field(0.5, ge=0, description="Weight of the date-window channel in rank fusion.")
-    weight_tag: float = Field(1.8, ge=0, description="RRF weight for the tag retrieval channel. "
-                              "High by default because tag matches are precise and exhaustive.")
     tag_similarity_threshold: float = Field(
         0.82, ge=0.5, le=1,
         description="Cosine similarity threshold for normalizing a proposed tag to an "

@@ -147,7 +147,8 @@ def format_computed(computed: dict | None) -> str:
     """The deterministic answer, its evidence, and its exclusions, for the prompt."""
     if not computed:
         return ""
-    lines = ["## Computed from memory (deterministic; use this instead of counting the memories yourself)"]
+    lines = ["## Computed from memory (exact over the records below; if the memories further down "
+             "clearly mention matching items it missed, include them)"]
     if computed["type"] == "temporal":
         a, b = computed["anchors"][0], computed["anchors"][1]
         lines.append(
@@ -381,13 +382,13 @@ async def _aggregate_answer(
     expected = {row.source_memory_id for row in result.evidence}
     missing = expected - {m.id for m in ordered}
     if missing:
-        log.warning(
-            "aggregation counted instances whose memories are not retrievable (%s); "
-            "adding ranked results so the answer is not empty", sorted(missing),
-        )
-        found, _ = await _dispatch_search(db, llm, config, user.id, plan, query, limit=limit)
-        seen = {m.id for m in ordered}
-        ordered += [m for m in _filter_by_not_after(found, not_after) if m.id not in seen]
+        log.warning("aggregation counted instances whose memories are not retrievable (%s)", sorted(missing))
+    # The records can miss things (an item filed under another subject, a status the
+    # extractor got wrong), so the ranked memories come too: the reader can see what the
+    # count may have missed. Same plan, no model call.
+    found, _ = await _dispatch_search(db, llm, config, user.id, plan, query, limit=limit)
+    seen = {m.id for m in ordered}
+    ordered += [m for m in _filter_by_not_after(found, not_after) if m.id not in seen]
 
     report = {
         "needs_memory": True,
@@ -460,8 +461,10 @@ async def build_memory_context(
     message: str,
     recent_chat: str = "",
     name: str = "",
+    not_after: datetime | None = None,
 ) -> tuple[str, list[Memory]]:
     """Text to inject into the system prompt, plus the memories it contains.
+    ``not_after``: answer as of this moment (replays, benchmarks).
 
     A computed answer (count, sum, date difference) goes first, with what it
     counted and what it left out. The profile block follows
@@ -469,7 +472,7 @@ async def build_memory_context(
     found nothing (the profile usually restates what the memories already say).
     """
     user = await ensure_user(db, user_id, name=name, timezone=config.default_timezone)
-    memories, report = await search(db, llm, config, user.id, message, recent_chat)
+    memories, report = await search(db, llm, config, user.id, message, recent_chat, not_after=not_after)
 
     inject_profile = (
         config.profile_injection == "always"

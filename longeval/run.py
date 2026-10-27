@@ -10,7 +10,8 @@ Usage:
 
     # Run with options:
     uv run python longeval/run.py --limit 20            # only 20 questions
-    uv run python longeval/run.py --judge llm           # LLM judge instead of substring
+    uv run python longeval/run.py --judge qa            # the real score: fixed reader + official judge
+    uv run python longeval/run.py --judge llm           # LLM judge over retrieved text (diagnostic)
     uv run python longeval/run.py --skip-ingest         # skip ingestion (reuse existing DB)
     uv run python longeval/run.py --verbose             # show individual misses
     uv run python longeval/run.py --split s              # use the "s" split (~277 MB)
@@ -33,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from harness import (
     Dataset,
+    build_qa_clients,
     aggregate,
     build_memory,
     download_dataset,
@@ -86,9 +88,11 @@ async def main() -> None:
         help="Cap the number of questions to evaluate.",
     )
     parser.add_argument(
-        "--judge", choices=["substring", "llm", "combined"], default="substring",
-        help="Scoring method: 'substring' (fast, free), 'llm' (accurate, costs tokens), "
-             "or 'combined' (substring first, LLM fallback for misses).",
+        "--judge", choices=["qa", "substring", "llm", "combined"], default="substring",
+        help="'qa': context() goes to a fixed reader (LongMemEval's prompt, READER_MODEL) and the "
+             "answer is graded with LongMemEval's own judge prompts (JUDGE_MODEL, default "
+             "zai.glm-5): the number comparable with published results, with cost and "
+             "latency. 'substring' / 'llm' / 'combined': retrieval diagnostics only.",
     )
     parser.add_argument(
         "--skip-ingest", action="store_true",
@@ -193,10 +197,14 @@ async def main() -> None:
         # -- ingest + query + score (each question in its own user) --------
         print(f"\n{'Querying' if args.skip_ingest else 'Ingesting and querying'} "
               f"{len(dataset.questions)} questions, {args.concurrency} at a time ({args.judge} judge) ...")
+        qa = None
+        if args.judge == "qa":
+            qa = build_qa_clients(env, cache=memory.llm if hasattr(memory.llm, "hits") else None)
+            print(f"  reader: {qa.reader_model}   judge: {qa.judge_model}")
         results, ingest_report = await run_benchmark(
             memory, dataset, judge=args.judge, concurrency=args.concurrency,
             skip_ingest=args.skip_ingest, user_prefix=args.user_id,
-            progress_fn=progress_bar,
+            progress_fn=progress_bar, qa=qa,
         )
         print(
             f"\n  done in {ingest_report['elapsed_s']}s: {ingest_report['ingested']} turn pairs from "
@@ -211,6 +219,18 @@ async def main() -> None:
                       "were not remembered. These results are incomplete: lower --concurrency and re-run "
                       "(finished calls replay from the cache).")
 
+        writes = memory.write_stats.as_dict()
+        if writes["writes"]:
+            n = writes["writes"]
+            print(
+                f"  write cost per turn: {writes['model_calls'] / n:.2f} model calls, "
+                f"{writes['embed_calls'] / n:.2f} embedding calls, "
+                f"{writes['prompt_tokens'] / n:.0f} prompt tokens ({writes['cached_tokens'] / n:.0f} cached), "
+                f"{writes['completion_tokens'] / n:.0f} completion tokens; "
+                f"{writes['skipped_writes']} chitchat turns skipped"
+                + ("   (tokens count only calls made this run, not cache replays)" if cache is not None else "")
+            )
+
         # -- report ---------------------------------------------------------
         report = aggregate(results)
         print()
@@ -220,6 +240,7 @@ async def main() -> None:
         if args.save_results:
             out = {
                 "report": report,
+                "write_stats": memory.write_stats.as_dict(),
                 "results": [
                     {
                         "question_id": r.question_id,
@@ -229,6 +250,9 @@ async def main() -> None:
                         "retrieved": r.retrieved_contents,
                         "hit": r.hit,
                         "rr": r.reciprocal_rank,
+                        **({"answer": r.answer, "context_tokens": r.context_tokens,
+                            "read_model_calls": r.read_model_calls, "recall_ms": round(r.recall_ms)}
+                           if r.answer else {}),
                         **({"all_retrieved": r.all_retrieved_contents}
                            if args.full_retrieval else {}),
                     }

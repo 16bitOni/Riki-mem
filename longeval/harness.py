@@ -87,6 +87,12 @@ class QuestionResult:
     hit: bool
     reciprocal_rank: float
     all_retrieved_contents: list[str] = field(default_factory=list)
+    # QA mode (fixed reader + official judge)
+    answer: str = ""
+    context_tokens: int = 0  # what the memory layer handed the reader (~4 characters per token)
+    read_model_calls: int = 0  # model calls inside the memory layer while answering
+    recall_ms: float = 0.0
+    abstention: bool = False
 
 # ---------------------------------------------------------------------------
 # .env loader (no external deps)
@@ -372,6 +378,8 @@ async def ingest_sessions(
         if progress_fn:
             progress_fn(ingested + errors, total_pairs, sid)
 
+        if not memory.config.enable_episodes:
+            continue  # a summary nobody reads is a paid call per session
         try:
             ep = await memory.close_session(
                 user_id=user_id,
@@ -486,10 +494,122 @@ async def score_llm_judge(
         return score_substring(expected, retrieved)
 
 # ---------------------------------------------------------------------------
+# QA mode: memory context -> fixed reader -> official judge
+# ---------------------------------------------------------------------------
+
+# LongMemEval's own reader prompt for a system that returns facts extracted from chats
+# (src/generation/run_generation.py, the step-by-step variant), so every memory system
+# is read the same way.
+READER_PROMPT = (
+    "I will give you several facts extracted from history chats between you and a user. "
+    "Please answer the question based on the relevant facts. Answer the question step by step: "
+    "first extract all the relevant information, and then reason over the information to get the answer."
+    "\n\n\nHistory Chats:\n\n{}\n\nCurrent Date: {}\nQuestion: {}\nAnswer (step by step):"
+)
+
+# LongMemEval's judge prompts, verbatim from src/evaluation/evaluate_qa.py.
+_JUDGE_BASE = (
+    "I will give you a question, a correct answer, and a response from a model. Please answer yes if "
+    "the response contains the correct answer. Otherwise, answer no. If the response is equivalent to "
+    "the correct answer or contains all the intermediate steps to get the correct answer, you should "
+    "also answer yes. If the response only contains a subset of the information required by the "
+    "answer, answer no."
+)
+JUDGE_PROMPTS = {
+    "default": _JUDGE_BASE + " \n\nQuestion: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\n"
+    "Is the model response correct? Answer yes or no only.",
+    "temporal-reasoning": _JUDGE_BASE + " In addition, do not penalize off-by-one errors for the number "
+    "of days. If the question asks for the number of days/weeks/months, etc., and the model makes "
+    "off-by-one errors (e.g., predicting 19 days when the answer is 18), the model's response is still "
+    "correct. \n\nQuestion: {}\n\nCorrect Answer: {}\n\nModel Response: {}\n\n"
+    "Is the model response correct? Answer yes or no only.",
+    "knowledge-update": "I will give you a question, a correct answer, and a response from a model. "
+    "Please answer yes if the response contains the correct answer. Otherwise, answer no. If the "
+    "response contains some previous information along with an updated answer, the response should be "
+    "considered as correct as long as the updated answer is the required answer.\n\nQuestion: {}\n\n"
+    "Correct Answer: {}\n\nModel Response: {}\n\nIs the model response correct? Answer yes or no only.",
+    "single-session-preference": "I will give you a question, a rubric for desired personalized "
+    "response, and a response from a model. Please answer yes if the response satisfies the desired "
+    "response. Otherwise, answer no. The model does not need to reflect all the points in the rubric. "
+    "The response is correct as long as it recalls and utilizes the user's personal information "
+    "correctly.\n\nQuestion: {}\n\nRubric: {}\n\nModel Response: {}\n\n"
+    "Is the model response correct? Answer yes or no only.",
+    "abstention": "I will give you an unanswerable question, an explanation, and a response from a "
+    "model. Please answer yes if the model correctly identifies the question as unanswerable. The model "
+    "could say that the information is incomplete, or some other information is given but the asked "
+    "information is not.\n\nQuestion: {}\n\nExplanation: {}\n\nModel Response: {}\n\n"
+    "Does the model correctly identify the question as unanswerable? Answer yes or no only.",
+}
+OFFICIAL_JUDGE_MODEL = "zai.glm-5"
+
+
+def judge_prompt(category: str, question_id: str, question: str, answer: str, response: str) -> str:
+    key = "abstention" if "_abs" in question_id else (category if category in JUDGE_PROMPTS else "default")
+    return JUDGE_PROMPTS[key].format(question, answer, response)
+
+
+@dataclass
+class QAClients:
+    """The fixed reader and judge, the same for every memory system under test."""
+    reader: object  # OpenAICompatibleProvider
+    reader_model: str
+    judge: object
+    judge_model: str
+    cache: object | None = None  # a CachingProvider, so re-runs replay answers and verdicts
+
+    async def ask(self, provider, model: str, prompt: str, max_tokens: int | None = None) -> str:
+        from cache import ask
+
+        if self.cache is not None:
+            return await self.cache.ask(provider, model, prompt, max_tokens)
+        return await ask(provider, model, prompt, max_tokens)
+
+
+def build_qa_clients(env: dict[str, str], cache=None) -> QAClients:
+    """Reader: READER_MODEL (default RIKI_CHAT_MODEL). Judge: JUDGE_MODEL (default the official
+    gpt-4o-2024-08-06). Each can have its own JUDGE_/READER_ BASE_URL and API_KEY."""
+    from riki_memory import OpenAICompatibleProvider
+
+    def client(prefix: str):
+        return OpenAICompatibleProvider(
+            api_key=env_get(env, f"{prefix}_API_KEY") or env_get(env, "RIKI_API_KEY"),
+            base_url=env_get(env, f"{prefix}_BASE_URL") or env_get(env, "RIKI_BASE_URL", "https://api.openai.com/v1"),
+        )
+
+    return QAClients(
+        reader=client("READER"), reader_model=env_get(env, "READER_MODEL") or env_get(env, "RIKI_CHAT_MODEL", "gpt-4o-mini"),
+        judge=client("JUDGE"), judge_model=env_get(env, "JUDGE_MODEL") or OFFICIAL_JUDGE_MODEL,
+        cache=cache,
+    )
+
+
+async def answer_and_judge(memory, user_id: str, q: "Question", not_after, qa: QAClients) -> dict:
+    """context() -> reader -> judge. Costs and latency of the memory layer are measured
+    around context() only; the reader and judge are the benchmark's, not the system's."""
+    from riki_memory import telemetry
+
+    t0 = time.perf_counter()
+    async with telemetry.tracking(user_id, "read") as report:
+        context, found = await memory.context(user_id, q.question, at=not_after)
+    recall_ms = (time.perf_counter() - t0) * 1000
+    answer = await qa.ask(qa.reader, qa.reader_model, READER_PROMPT.format(context, q.question_date, q.question))
+    verdict = await qa.ask(
+        qa.judge, qa.judge_model,
+        judge_prompt(q.category, q.question_id, q.question, " OR ".join(q.answers), answer), max_tokens=10,
+    )
+    return {
+        "hit": "yes" in verdict.lower(), "answer": answer, "found": [m.content for m in found],
+        "context_tokens": len(context) // 4, "read_model_calls": report.model_calls, "recall_ms": recall_ms,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Query + evaluate
 # ---------------------------------------------------------------------------
 
-async def score_question(memory, user_id: str, q: Question, judge: str = "substring") -> QuestionResult:
+async def score_question(
+    memory, user_id: str, q: Question, judge: str = "substring", qa: QAClients | None = None,
+) -> QuestionResult:
     """Ask one question of its own user's memory and score the answer."""
     # Parse question_date into a datetime upper bound so retrieval excludes
     # memories that post-date when the question was actually asked.
@@ -506,6 +626,22 @@ async def score_question(memory, user_id: str, q: Question, judge: str = "substr
                 break
             except ValueError:
                 continue
+
+    if judge == "qa":
+        try:
+            out = await answer_and_judge(memory, user_id, q, not_after, qa)
+        except Exception as e:
+            log.warning("qa error q=%s: %s", q.question_id, e)
+            out = {"hit": False, "answer": f"(error: {e})", "found": [], "context_tokens": 0,
+                   "read_model_calls": 0, "recall_ms": 0.0}
+        return QuestionResult(
+            question_id=q.question_id, category=q.category, question=q.question,
+            expected_answers=q.answers, retrieved_contents=out["found"][:5], hit=out["hit"],
+            reciprocal_rank=1.0 if out["hit"] else 0.0, all_retrieved_contents=out["found"],
+            answer=out["answer"], context_tokens=out["context_tokens"],
+            read_model_calls=out["read_model_calls"], recall_ms=out["recall_ms"],
+            abstention="_abs" in q.question_id,
+        )
 
     try:
         found, _report = await memory.recall(
@@ -554,6 +690,7 @@ async def run_benchmark(
     skip_ingest: bool = False,
     user_prefix: str = "longeval",
     progress_fn: ProgressFn | None = None,
+    qa: QAClients | None = None,
 ) -> tuple[list[QuestionResult], dict]:
     """Ingest each question's own sessions into its own user, then ask it.
 
@@ -580,7 +717,7 @@ async def run_benchmark(
                 stats = await ingest_sessions(memory, user_id, sessions)
                 for key in totals:
                     totals[key] += stats.get(key, 0)
-            result = await score_question(memory, user_id, q, judge)
+            result = await score_question(memory, user_id, q, judge, qa)
         done += 1
         if progress_fn:
             progress_fn(done, len(dataset.questions), q.category)
@@ -602,15 +739,28 @@ def aggregate(results: list[QuestionResult]) -> dict:
 
     def metrics(items: list[QuestionResult]) -> dict:
         n = len(items) or 1
-        return {
+        out = {
             "count": len(items),
             "hit_rate": round(sum(1 for r in items if r.hit) / n, 3),
             "mrr": round(sum(r.reciprocal_rank for r in items) / n, 3),
         }
+        if any(r.answer for r in items):  # QA mode: accuracy plus what it cost to get there
+            ms = sorted(r.recall_ms for r in items)
+            out.update(
+                accuracy=out["hit_rate"],
+                context_tokens_avg=round(sum(r.context_tokens for r in items) / n),
+                read_model_calls_avg=round(sum(r.read_model_calls for r in items) / n, 2),
+                recall_ms_p50=round(ms[len(ms) // 2]) if ms else 0,
+                recall_ms_p95=round(ms[min(len(ms) - 1, int(len(ms) * 0.95))]) if ms else 0,
+            )
+        return out
 
     report = {"overall": metrics(results), "by_category": {}}
     for cat in sorted(categories):
         report["by_category"][cat] = metrics(categories[cat])
+    abstain = [r for r in results if r.abstention]
+    if abstain and any(r.answer for r in results):
+        report["by_category"]["abstention (_abs)"] = metrics(abstain)
     return report
 
 
@@ -621,15 +771,27 @@ def format_report(report: dict, results: list[QuestionResult], verbose: bool = F
     lines.append("  LongMemEval Results")
     lines.append("=" * 60)
     lines.append(f"  Questions      : {overall['count']}")
-    lines.append(f"  Hit Rate       : {overall['hit_rate']:.1%}")
-    lines.append(f"  MRR            : {overall['mrr']:.3f}")
+    if "accuracy" in overall:
+        lines.append(f"  Accuracy (QA)  : {overall['accuracy']:.1%}   (fixed reader, official judge prompts)")
+        lines.append(f"  Context tokens : {overall['context_tokens_avg']} per question")
+        lines.append(f"  Model calls    : {overall['read_model_calls_avg']} per question inside memory")
+        lines.append(f"  Recall latency : p50 {overall['recall_ms_p50']} ms, p95 {overall['recall_ms_p95']} ms")
+    else:
+        lines.append(f"  Hit Rate       : {overall['hit_rate']:.1%}")
+        lines.append(f"  MRR            : {overall['mrr']:.3f}")
     lines.append("-" * 60)
 
     for cat, m in report["by_category"].items():
-        lines.append(
-            f"  {cat:<30s}  n={m['count']:>3d}  hit={m['hit_rate']:.1%}"
-            f"  mrr={m['mrr']:.3f}"
-        )
+        if "accuracy" in m:
+            lines.append(
+                f"  {cat:<30s}  n={m['count']:>3d}  acc={m['accuracy']:.1%}"
+                f"  ctx={m['context_tokens_avg']:>5d} tok  p50={m['recall_ms_p50']} ms"
+            )
+        else:
+            lines.append(
+                f"  {cat:<30s}  n={m['count']:>3d}  hit={m['hit_rate']:.1%}"
+                f"  mrr={m['mrr']:.3f}"
+            )
 
     if verbose:
         lines.append("")
@@ -640,7 +802,9 @@ def format_report(report: dict, results: list[QuestionResult], verbose: bool = F
             if not r.hit:
                 lines.append(f"  [{r.category}] {r.question}")
                 lines.append(f"    expected: {r.expected_answers}")
-                if r.retrieved_contents:
+                if r.answer:
+                    lines.append(f"    answered: {r.answer[-160:]}")
+                elif r.retrieved_contents:
                     lines.append(f"    got:      {r.retrieved_contents[0][:120]}...")
                 else:
                     lines.append("    got:      (nothing retrieved)")

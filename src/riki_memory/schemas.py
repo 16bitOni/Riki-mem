@@ -9,7 +9,7 @@ Writing:  NewMemory       (what the extraction LLM proposes; forgiving, so one o
 
 import logging
 from datetime import datetime
-from typing import Annotated, Literal, get_args
+from typing import Annotated, ClassVar, Literal, get_args
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
@@ -22,6 +22,8 @@ EntityType = Literal["person", "place", "org", "project", "other"]
 # stated: the user said it. inferred: the extractor concluded it (a mood, an implied
 # preference). assistant: it came from the assistant's reply (advice the user received).
 MemorySource = Literal["stated", "inferred", "assistant"]
+# Core memory: short lists shown in every context (see profile.py).
+CoreBlock = Literal["identity", "preferences", "constraints", "people", "projects"]
 MemoryText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 Importance = Annotated[int, Field(ge=1, le=5, description="1 = trivia ... 5 = core to who the user is")]
 
@@ -324,12 +326,6 @@ class NewMemory(BaseModel):
     )
     entities: list[EntityMention] = Field(default_factory=list)
     relations: list[RelationMention] = Field(default_factory=list)
-    tags: list[str] = Field(
-        default_factory=list,
-        description="2-5 short lowercase topic/category labels describing what this memory "
-        "is about. Examples: purchase, job-interview, travel, fitness, work, family, "
-        "health, finance, home-improvement, school.",
-    )
     replaces: list[str] = Field(
         default_factory=list, description="IDs of known memories this one makes outdated."
     )
@@ -337,6 +333,11 @@ class NewMemory(BaseModel):
         default="stated",
         description="'stated' if the user said it; 'inferred' if you concluded it from how they "
         "spoke (moods, implied preferences); 'assistant' if it comes from the assistant's reply.",
+    )
+    core: CoreBlock | None = Field(
+        default=None,
+        description="The core-memory block this belongs in, only for the few facts worth having "
+        "in every conversation; empty for everything else.",
     )
     valid_until: datetime | None = Field(
         default=None,
@@ -372,12 +373,11 @@ class NewMemory(BaseModel):
                 log.warning("dropped an invalid instance from the extractor: %s", error)
         return kept
 
-    @field_validator("tags", mode="before")
+    @field_validator("entities", "relations", mode="before")
     @classmethod
-    def _normalise_tags(cls, values):
-        if not isinstance(values, list):
-            return []
-        return [t.strip().lower().replace(" ", "-") for t in values if isinstance(t, str) and t.strip()][:10]
+    def _at_most_ten(cls, values):
+        """A crowded sentence names more than MemoryCreate keeps: keep the first ten, not lose the memory."""
+        return values[:10] if isinstance(values, list) else values
 
     @field_validator("kind", mode="before")
     @classmethod
@@ -390,6 +390,10 @@ class NewMemory(BaseModel):
 
 
 class Extraction(BaseModel):
+    # The prompt carries every rule, so the schema sent to the model leaves its descriptions
+    # out: they repeated the prompt and doubled the input tokens of every write.
+    compact_schema: ClassVar[bool] = True
+
     # Required, not defaulted: a reply without "memories" is a malformed answer
     # and must fail loudly, not read as "nothing worth remembering".
     memories: list[NewMemory]
@@ -432,6 +436,7 @@ class MemoryCreate(Strict):
     # they are kept as searchable history. None: a correction (no history).
     changed_at: AwareDatetime | None = None
     source: MemorySource = "stated"
+    core: CoreBlock | None = None  # extraction routes it to this core-memory block
     valid_to: AwareDatetime | None = None  # a temporary state ends then
     instances: list[InstanceItem] = Field(default_factory=list, max_length=20)
     # Your app's own structured fields: short keys, scalar or list-of-scalar values.

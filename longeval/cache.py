@@ -15,6 +15,17 @@ import json
 import os
 from pathlib import Path
 
+from riki_memory import telemetry
+
+
+async def ask(provider, model: str, prompt: str, max_tokens: int | None = None) -> str:
+    """A single user message at temperature 0, through an ``OpenAICompatibleProvider``."""
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0}
+    if max_tokens:
+        body["max_tokens"] = max_tokens
+    data = await provider._post("/chat/completions", body)
+    return (data["choices"][0]["message"]["content"] or "").strip()
+
 
 class CachingProvider:
     """Wraps an ``LLMProvider``; same interface, answers from disk when it can."""
@@ -31,6 +42,10 @@ class CachingProvider:
     def _path(self, *parts: str) -> Path:
         digest = hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
         return self.root / digest[:2] / f"{digest}.json"
+
+    def __getattr__(self, name):
+        # Methods not cached here (rerank_scores, ...) go straight to the provider.
+        return getattr(self.inner, name)
 
     def _read(self, path: Path):
         try:
@@ -52,6 +67,7 @@ class CachingProvider:
                           json.dumps(schema.model_json_schema(), sort_keys=True), system, user)
         cached = self._read(path)
         if cached is not None:
+            telemetry.record_model_call()  # still a call the system made; the cache only made it free
             return schema.model_validate(cached)
         result = await self._call(self.inner.chat_json(system, user, schema, fast=fast))
         self._write(path, result.model_dump(mode="json"))
@@ -61,6 +77,7 @@ class CachingProvider:
         path = self._path("text", self.models[fast], system, user)
         cached = self._read(path)
         if cached is not None:
+            telemetry.record_model_call()
             return cached
         result = await self._call(self.inner.chat_text(system, user, fast=fast))
         self._write(path, result)
@@ -72,6 +89,16 @@ class CachingProvider:
         if cached is not None:
             return cached
         result = await self._call(self.inner.embed(text))
+        self._write(path, result)
+        return result
+
+    async def ask(self, provider, model: str, prompt: str, max_tokens: int | None = None) -> str:
+        """One user-only chat call (how LongMemEval's reader and judge are called), cached."""
+        path = self._path("ask", model, str(max_tokens), prompt)
+        cached = self._read(path)
+        if cached is not None:
+            return cached
+        result = await self._call(ask(provider, model, prompt, max_tokens))
         self._write(path, result)
         return result
 

@@ -22,7 +22,7 @@ import time
 from datetime import datetime
 from typing import TypeVar
 
-from sqlalchemy import String, func, literal, or_, select, union_all
+from sqlalchemy import func, literal, or_, select, union_all
 
 from .config import MemoryConfig
 from .db import Database
@@ -196,53 +196,6 @@ async def graph_search(
         return [row[0] for row in rows]
 
 
-async def tag_search(
-    db: Database,
-    llm: LLMProvider,
-    config: MemoryConfig,
-    user_id: str,
-    tags: list[str],
-) -> list[str]:
-    """Tag channel: return ALL active memories matching ANY of the given tags.
-
-    Unlike other channels this is exhaustive — no CHANNEL_DEPTH cap — because
-    aggregation queries ("how many weddings?") need every instance.
-
-    Uses semantic expansion: query tags are broadened to include similar tags
-    from the user's vocabulary so "charity" also matches "fundraiser".
-    """
-    if not tags:
-        return []
-    normalised = [t.strip().lower().replace(" ", "-") for t in tags if t.strip()]
-    if not normalised:
-        return []
-
-    from .tags import expand_tags_semantically
-
-    try:
-        search_tags = await expand_tags_semantically(
-            llm, db, user_id, normalised, config.tag_similarity_threshold
-        )
-    except Exception:
-        log.exception("semantic tag expansion failed; falling back to exact tags")
-        search_tags = normalised
-
-    async with db.session_scope() as session:
-        conditions = [Memory.tags.cast(String).like(f'%"{tag}"%') for tag in search_tags]
-        stmt = (
-            select(Memory.id)
-            .where(
-                Memory.user_id == user_id,
-                Memory.is_active.is_(True),
-                Memory.tags.is_not(None),
-                or_(*conditions),
-            )
-            .order_by(Memory.importance.desc(), Memory.created_at.desc())
-            .limit(200)
-        )
-        return list((await session.scalars(stmt)).all())
-
-
 async def episode_search(
     db: Database,
     llm: LLMProvider,
@@ -340,8 +293,6 @@ async def hybrid_search(
             db, llm, config, user_id, plan.semantic_query,
             vector=query_vector,
         )
-    if plan.tags:
-        channels["tag"] = tag_search(db, llm, config, user_id, plan.tags)
 
     weights = {
         "keyword": config.weight_keyword,
@@ -349,7 +300,6 @@ async def hybrid_search(
         "graph": config.weight_graph,
         "time": config.weight_time,
         "episode": config.weight_episode,
-        "tag": config.weight_tag,
     }
     outcomes = await asyncio.gather(*(_timed(name, task) for name, task in channels.items()))
     results = [ids for _, ids, _, _ in outcomes]

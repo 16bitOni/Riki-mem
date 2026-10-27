@@ -46,7 +46,8 @@ ABLATION = {
     "default": {},
     "planner-llm": {"planner_mode": "llm"},
     "planner-heuristic": {"planner_mode": "heuristic"},
-    "no-rerank": {"rerank": "off"},
+    "rerank-llm": {"rerank": "llm"},  # rerank is off by default; does turning it on earn its call?
+    "profile-always": {"profile_injection": "always"},  # core memory in every context
     "agentic": {"retrieval_mode": "agentic"},
     "episodes": {"enable_episodes": True},
     "no-entities": {"enable_entities": False},
@@ -243,8 +244,15 @@ async def run_scenario(memory, reader, judge, variant: str, scenario: dict, now:
     if secrets:
         stored = [m.content for ns in namespaces for m in await memory.list_memories(ns, active_only=False, limit=1000)]
         profiles = [n.profile for n in await memory.list_namespaces(limit=1000) if n.id in namespaces]
+        from sqlalchemy import select
+
+        from riki_memory.models import Turn
+
+        async with memory.db.session_scope() as session:  # the raw turn log counts as stored too
+            raw = [f"{t.user_text}\n{t.reply_text}" for t in (await session.scalars(
+                select(Turn).where(Turn.user_id.in_(namespaces)))).all()]
         for secret in secrets:
-            if any(secret.lower() in text.lower() for text in stored + profiles):
+            if any(secret.lower() in text.lower() for text in stored + profiles + raw):
                 result.privacy_violations.append(f"{secret!r} is stored")
     return result
 
@@ -285,7 +293,10 @@ def summarise(name: str, overrides: dict, results: list[ScenarioResult], writes:
         "unmatched_actions": [a for r in results for a in r.unmatched_actions],
         "read_model_calls_per_question": round(sum(q.read_model_calls for q in questions) / n, 2),
         "context_chars_per_question": round(sum(q.context_chars for q in questions) / n),
-        "write": {k: writes[k] for k in ("writes", "failed_writes", "memories_saved", "dropped_invalid", "model_calls")},
+        "write": {k: writes[k] for k in (
+            "writes", "failed_writes", "memories_saved", "dropped_invalid", "model_calls", "embed_calls",
+            "prompt_tokens", "cached_tokens", "completion_tokens", "skipped_writes",
+        )},
         "details": [q.__dict__ for q in questions],
     }
 

@@ -407,11 +407,13 @@ class RikiMemory:
         )
 
     async def context(
-        self, user_id: str, message: str, recent_chat: str = "", name: str = ""
+        self, user_id: str, message: str, recent_chat: str = "", name: str = "",
+        at: datetime | None = None,
     ) -> tuple[str, list[Memory]]:
-        """Prompt-ready context block (profile + relevant memories) for the message."""
+        """Prompt-ready context block (core memory, computed answers, relevant memories)
+        for the message. ``at``: answer as of that moment (default now), for replays."""
         return await recall.build_memory_context(
-            self.db, self.llm, self.config, user_id, message, recent_chat, name=name
+            self.db, self.llm, self.config, user_id, message, recent_chat, name=name, not_after=at
         )
 
     # -- maintenance -------------------------------------------------------

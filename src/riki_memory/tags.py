@@ -4,10 +4,10 @@ Write-time convergence: proposed tags are matched against the user's existing
 tag vocabulary by embedding similarity.  "fundraiser" becomes "charity-event"
 if "charity-event" already exists and is close enough.
 
-Query-time expansion: query tags are broadened to include semantically similar
-tags from the vocabulary so "charity" also finds memories tagged "fundraiser".
+Instance subjects converge the same way, and counting questions match their noun
+against the user's subjects with the same vectors (aggregation.py).
 
-Both paths share a process-level embedding cache, keyed by (embedding model, term),
+Both share a process-level embedding cache, keyed by (embedding model, term),
 so each term is embedded at most once per model per process, and every term not yet
 cached is embedded in one batched call.
 """
@@ -62,23 +62,6 @@ async def get_user_tag_vocabulary(db, user_id: str) -> set[str]:
         if isinstance(tag_list, list):
             tags.update(t for t in tag_list if isinstance(t, str))
     return tags
-
-
-async def expand_tags_semantically(
-    llm, db, user_id: str, query_tags: list[str], threshold: float
-) -> list[str]:
-    """Expand query tags with semantically similar tags from the user's vocabulary."""
-    expanded = set(query_tags)
-    existing = await get_user_tag_vocabulary(db, user_id)
-    vectors = await tag_vectors(llm, [*query_tags, *existing])
-    for qtag in query_tags:
-        if qtag not in vectors:
-            continue
-        for etag in existing:
-            if etag not in expanded and etag in vectors and \
-                    cosine_similarity(vectors[qtag], vectors[etag]) >= threshold:
-                expanded.add(etag)
-    return list(expanded)
 
 
 async def get_user_subjects(db, user_id: str) -> set[str]:

@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from .db import Database
 from .models import Memory, Turn, User, new_id, utcnow
+from .privacy import redact_secrets
 
 MAX_ATTEMPTS = 3
 STALE = timedelta(minutes=10)
@@ -51,8 +52,9 @@ async def enqueue(
         row = await session.scalar(
             insert(Turn)
             .values(
-                id=turn_id, user_id=user_id, key=key or f"turn:{turn_id}", user_text=user_text,
-                reply_text=reply_text, at=at, known_ids=known_ids,
+                id=turn_id, user_id=user_id, key=key or f"turn:{turn_id}",
+                user_text=redact_secrets(user_text), reply_text=redact_secrets(reply_text),
+                at=at, known_ids=known_ids,
                 status="processing" if claim else "pending", attempts=1 if claim else 0,
                 claimed_at=now if claim else None, created_at=now,
             )

@@ -159,6 +159,8 @@ class OpenAICompatibleProvider:
         json_schema = schema.model_json_schema()
         # `additionalProperties: false` breaks some servers; the schema is advisory, not a contract.
         json_schema.pop("additionalProperties", None)
+        if getattr(schema, "compact_schema", False):
+            json_schema = _without_descriptions(json_schema)
         data = await self._post(
             "/chat/completions",
             {
@@ -223,6 +225,15 @@ async def embed_texts(llm, texts: list[str]) -> list[list[float]]:
     if callable(many):
         return await many(list(texts))
     return list(await asyncio.gather(*(llm.embed(t) for t in texts)))
+
+
+def _without_descriptions(node):
+    """The schema minus descriptions and titles (structure and allowed values stay)."""
+    if isinstance(node, dict):
+        return {k: _without_descriptions(v) for k, v in node.items() if k not in ("description", "title")}
+    if isinstance(node, list):
+        return [_without_descriptions(v) for v in node]
+    return node
 
 
 def _backoff(attempt: int, retry_after: str | None) -> float:

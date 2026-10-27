@@ -11,7 +11,7 @@ import logging
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
@@ -272,8 +272,21 @@ def _when(row: Instance) -> tuple:
     return (row.date or row.created_at, row.created_at)
 
 
+SCHEDULED_KINDS = ("event", "visit", "trip", "activity")
+
+
+def _planned_and_passed(row: Instance, query: AggregationQuery) -> bool:
+    """A scheduled thing (an interview "on Monday") whose date has gone by, never cancelled.
+    People rarely report that it happened, so it counts as done, and says so."""
+    if row.status != "planned" or row.kind not in SCHEDULED_KINDS or row.date is None:
+        return False
+    return row.date <= (query.not_after or datetime.now(timezone.utc))
+
+
 def _passes(row: Instance, query: AggregationQuery) -> bool:
-    return not query.status_filter or row.status in query.status_filter
+    if not query.status_filter or row.status in query.status_filter:
+        return True
+    return "occurred" in query.status_filter and _planned_and_passed(row, query)
 
 
 def _pick_one_per_key(
@@ -423,11 +436,11 @@ async def execute_aggregation(
     )
 
 
-def _instance_view(row: Instance) -> dict:
+def _instance_view(row: Instance, query: AggregationQuery | None = None) -> dict:
     return {
         "name": row.display_name,
         "key": row.instance_key,
-        "status": row.status,
+        "status": "planned, date passed" if query and _planned_and_passed(row, query) else row.status,
         "date": row.date.date().isoformat() if row.date else None,
         "value": row.numeric_value,
         "unit": row.unit,
@@ -445,7 +458,7 @@ def computed_view(result: AggregationResult, query: AggregationQuery) -> dict:
         "current_state": query.current_state,
         "unit": result.unit,
         "value": result.value,
-        "included": [_instance_view(r) for r in result.evidence],
+        "included": [_instance_view(r, query) for r in result.evidence],
         "excluded": [{**_instance_view(r), "reason": why} for r, why in result.excluded],
     }
 

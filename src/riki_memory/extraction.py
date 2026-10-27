@@ -18,7 +18,8 @@ from .config import MemoryConfig
 from .db import Database
 from .llm import LLMProvider, embed_texts
 from .models import Instance, Memory
-from .profile import refresh_profile_if_stale
+from .privacy import redact_secrets
+from .profile import add_lines, refresh_profile_if_stale
 from .recall import format_memories
 from .router import PREGATE_RE
 from .schemas import Extraction, MemoryCreate
@@ -66,11 +67,17 @@ Rules:
 - Preserve the specific details and terminology from the conversation. If the user says
   "the oven runs about 20 degrees hot", keep those words, not a paraphrase like
   "oven problem". Specificity matters for later retrieval.
-- Tag each memory with 2-5 short lowercase topic labels in the `tags` field. Tags describe
-  WHAT the memory is about — be specific. Examples: "job-interview", "kitchen-renovation",
-  "marathon-training", "tax-filing", "school-admission", "visa-application", "food-allergy",
-  "rent". Use hyphens for multi-word tags. Good tags enable later queries like
-  "how many interviews" or "total spent on the renovation".
+- `importance`: 1 trivia ... 5 core to who they are. `semantic`: true for opinions,
+  feelings, preferences and ideas; false for names, dates and numbers.
+- `entities`: the people, places, organisations and projects named (type person, place, org,
+  project or other). `relations`: how they connect, as a short verb phrase
+  ({"subject": "Riya", "predicate": "sister of", "target": "Sub"}).
+- `core`: only for the few facts worth having in every conversation, the block they belong
+  in: identity (name, work, city, life situation), preferences (how they like things and
+  like to be helped), constraints (allergies, diet, health limits, hard no's: anything an
+  answer must never violate), people (who matters in their life), projects (active goals).
+  Leave it empty for everything else; most memories have none.
+- `attributes`: empty unless the APP-SPECIFIC INSTRUCTIONS ask for structured fields.
 - NEVER drop numbers that belong to the memory. If the user says "$1,200 for the sofa",
   the memory MUST contain "$1,200". If "ran 21 km", the memory MUST say "21 km".
 - NEVER normalize tense in a way that loses occurrence information. "attended a workshop"
@@ -205,6 +212,7 @@ async def propose_memories(
     when re-extracting history so "next Friday" resolves correctly.
     """
     user = await ensure_user(db, user_id, timezone=config.default_timezone)
+    user_message, reply = redact_secrets(user_message), redact_secrets(reply)  # never sent to the model
     if known is None:
         known = await find_neighbours(db, llm, config, user, user_message)
 
@@ -259,11 +267,11 @@ async def propose_memories(
                     source_key=turn_key,
                     entities=item.entities,
                     relations=item.relations,
-                    tags=item.tags,
                     # a guess never overrules what the user actually said
                     replaces=[r for r in item.replaces if r in shown_ids
                               and not (item.source != "stated" and r in stated_ids)],
                     source=item.source,
+                    core=item.core,
                     # what it replaces was true until this happened (or until this turn)
                     changed_at=localize(item.event_at, user.timezone) or turn_time,
                     valid_to=localize(item.valid_until, user.timezone),
@@ -294,9 +302,17 @@ async def save_proposed(
             vectors = dict(zip(wanted, made))
         except Exception:
             log.warning("batch embedding failed; embedding one memory at a time", exc_info=True)
-    saved = []
+    saved, core = [], []
     for i, data in enumerate(proposed):
-        saved.append(await save_memory(db, llm, config, data, on_important=on_important, vector=vectors.get(i)))
+        memory = await save_memory(db, llm, config, data, on_important=on_important, vector=vectors.get(i))
+        saved.append(memory)
+        if data.core and memory.is_active:
+            core.append((data.core, memory.content, memory.id))
+    if core:
+        try:
+            await add_lines(db, proposed[0].user_id, core)
+        except Exception:
+            log.warning("could not add core-memory lines; the next update will", exc_info=True)
     return saved
 
 

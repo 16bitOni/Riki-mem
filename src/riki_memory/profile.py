@@ -22,10 +22,10 @@ from .config import MemoryConfig
 from .db import Database
 from .llm import LLMProvider
 from .models import Memory, User
+from .schemas import CoreBlock as BlockLabel
 
 log = logging.getLogger(__name__)
 
-BlockLabel = Literal["identity", "preferences", "constraints", "people", "projects"]
 BLOCK_LABELS: tuple[str, ...] = BlockLabel.__args__
 BLOCK_HINTS = {
     "identity": "who they are: name, work, location, life situation",
@@ -90,6 +90,17 @@ def without_sources(blocks: dict | None, memory_ids: set[str]) -> dict:
         label: kept for label, lines in (blocks or {}).items()
         if (kept := [line for line in lines if not set(line.get("from") or []) & memory_ids])
     }
+
+
+async def add_lines(db: Database, user_id: str, lines: list[tuple[str, str, str]]) -> None:
+    """Append ``(block, text, memory_id)`` lines the extractor routed to core memory, right
+    away and without a model call, so a new user's allergy is in context from the first turn.
+    The periodic update later tidies them (merges, removes what changed)."""
+    if not lines:
+        return
+    blocks = await get_blocks(db, user_id)
+    edits = [BlockEdit(block=b, op="add", text=t, memory_ids=[i]) for b, t, i in lines]
+    await save_blocks(db, user_id, apply_edits(blocks, edits, {i for _, _, i in lines}))
 
 
 async def save_blocks(db: Database, user_id: str, blocks: dict, *, refreshed: bool = False) -> None:
